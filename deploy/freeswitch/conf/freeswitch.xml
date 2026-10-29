@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<!--
+  QuaverDesk voice server (FreeSWITCH). Minimal on purpose: only what the
+  phone system uses. Everything that changes at run time (phones, trunks,
+  allow-lists, the webhook secret) lives in quaverdesk/, written by
+  `php artisan voice:sync`. See docs/VOICE-SERVER.md.
+-->
+<document type="freeswitch/xml">
+  <X-PRE-PROCESS cmd="include" data="vars.xml"/>
+
+  <section name="configuration" description="Modules and their settings">
+    <X-PRE-PROCESS cmd="include" data="autoload_configs/*.xml"/>
+  </section>
+
+  <section name="dialplan" description="Every call is handed to the app (mod_httapi)">
+    <X-PRE-PROCESS cmd="include" data="dialplan/*.xml"/>
+  </section>
+
+  <section name="directory" description="Softphones and desk phones">
+    <X-PRE-PROCESS cmd="include" data="directory/*.xml"/>
+  </section>
+</document>

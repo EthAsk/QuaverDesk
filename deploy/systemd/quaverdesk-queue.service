@@ -1,0 +1,28 @@
+# QuaverDesk background worker: saves recordings, runs AI, sends voicemail email.
+# Install: sudo cp deploy/systemd/quaverdesk-queue.service /etc/systemd/system/
+#          sudo systemctl daemon-reload && sudo systemctl enable --now quaverdesk-queue
+
+[Unit]
+Description=QuaverDesk queue worker
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+User=quaverdesk
+Group=quaverdesk
+WorkingDirectory=/srv/quaverdesk
+# --max-time makes the worker restart hourly so it never runs stale code for long.
+ExecStart=/usr/bin/php /srv/quaverdesk/artisan queue:work --sleep=3 --max-time=3600
+Restart=always
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+# VOICE_CONF_DIR is under /etc, which ProtectSystem makes read-only.
+ReadWritePaths=-/etc/freeswitch/quaverdesk
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

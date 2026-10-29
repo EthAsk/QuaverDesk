@@ -1,0 +1,41 @@
+<configuration name="httapi.conf" description="Calls are controlled by the app over HTTP">
+  <settings>
+    <param name="debug" value="false"/>
+    <!-- Spoken prompts are cached; their URLs change whenever the text does. -->
+    <param name="file-cache-ttl" value="3600"/>
+    <param name="file-not-found-expires" value="10"/>
+  </settings>
+  <profiles>
+    <profile name="quaverdesk">
+      <!-- Least privilege: the app can play, record, gather digits and bridge calls, nothing else. -->
+      <permissions>
+        <permission name="set-params" value="false"/>
+        <permission name="set-vars" value="false"/>
+        <permission name="get-vars" value="true" default="deny">
+          <variable-list>
+            <variable name="originate_disposition" type="allow"/>
+          </variable-list>
+        </permission>
+        <permission name="extended-data" value="false"/>
+        <permission name="execute-apps" value="true" default="deny">
+          <application-list>
+            <application name="bridge" type="allow"/>
+          </application-list>
+        </permission>
+        <permission name="expand-vars" value="false"/>
+        <permission name="dial" value="false"/>
+        <permission name="conference" value="false"/>
+      </permissions>
+      <params>
+        <param name="gateway-url" value="$${qd_app_url}/webhooks/voice/inbound"/>
+        <param name="gateway-credentials" value="$${qd_webhook_auth}"/>
+        <param name="auth-scheme" value="basic"/>
+        <param name="method" value="POST"/>
+        <param name="timeout" value="15"/>
+        <param name="connect-timeout" value="3"/>
+        <param name="enable-cacert-check" value="true"/>
+        <param name="enable-ssl-verifyhost" value="true"/>
+      </params>
+    </profile>
+  </profiles>
+</configuration>

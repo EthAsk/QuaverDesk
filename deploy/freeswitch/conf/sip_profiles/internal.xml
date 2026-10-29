@@ -1,0 +1,40 @@
+<!--
+  Our own phones: browser softphones (WebSocket) and desk phones (TLS).
+  Every registration and every call must authenticate against the directory.
+-->
+<profile name="internal">
+  <settings>
+    <param name="context" value="users"/>
+    <param name="sip-ip" value="$${local_ip_v4}"/>
+    <param name="rtp-ip" value="$${local_ip_v4}"/>
+    <param name="ext-sip-ip" value="$${qd_external_ip}"/>
+    <param name="ext-rtp-ip" value="$${qd_external_ip}"/>
+    <param name="sip-port" value="$${internal_sip_port}"/>
+    <param name="force-register-domain" value="$${domain}"/>
+    <param name="force-subscription-domain" value="$${domain}"/>
+    <param name="force-register-db-domain" value="$${domain}"/>
+    <param name="challenge-realm" value="$${domain}"/>
+    <param name="auth-calls" value="true"/>
+    <param name="auth-all-packets" value="false"/>
+    <param name="accept-blind-reg" value="false"/>
+    <param name="accept-blind-auth" value="false"/>
+    <param name="inbound-reg-force-matching-username" value="true"/>
+    <param name="apply-nat-acl" value="nat.auto"/>
+    <param name="local-network-acl" value="localnet.auto"/>
+    <param name="inbound-codec-prefs" value="$${codecs_internal}"/>
+    <param name="outbound-codec-prefs" value="$${codecs_internal}"/>
+    <param name="inbound-codec-negotiation" value="generous"/>
+    <param name="dtmf-type" value="rfc2833"/>
+    <param name="rtp-timeout-sec" value="300"/>
+    <param name="rtp-hold-timeout-sec" value="1800"/>
+    <param name="nonce-ttl" value="60"/>
+    <param name="manage-presence" value="false"/>
+    <param name="user-agent-string" value="QuaverDesk"/>
+    <!-- Browsers: plain ws:// on this machine only; wss:// on 7443 comes with TLS (below). -->
+    <param name="ws-binding" value="127.0.0.1:5066"/>
+    <param name="apply-candidate-acl" value="rfc1918.auto"/>
+    <param name="apply-candidate-acl" value="localnet.auto"/>
+    <!-- TLS for desk phones and wss:// for browsers, written by the app when VOICE_TLS is on. -->
+    <X-PRE-PROCESS cmd="include" data="../quaverdesk/sofia/*.xml"/>
+  </settings>
+</profile>

@@ -1,0 +1,79 @@
+<include>
+  <!--
+    Never put caller-controlled values into the httapi {...} parameters: a comma
+    or brace could add parameters (including the URL our credentials go to).
+    Only regex-checked captures and our own directory ids are used.
+  -->
+
+  <!-- Calls from SIP trunks to our numbers. -->
+  <context name="public">
+    <extension name="trunk-inbound">
+      <!-- Registration trunks often put the dialled number in the To header. -->
+      <condition field="${sip_to_user}" expression="^(\+?[0-9]{6,15})$" break="never">
+        <action application="set" data="qd_to_user=$1"/>
+      </condition>
+      <!-- A call to a registering trunk's own address (gw+<gateway name>, which ends in a secret). -->
+      <condition field="${sip_req_user}" expression="^gw\+(qd-t[0-9]{1,9}-[0-9]{1,3}-[a-f0-9]{12})$" break="never">
+        <action application="set" data="qd_gateway=$1"/>
+      </condition>
+      <condition field="destination_number" expression="^.{1,64}$">
+        <action application="set" data="RECORD_STEREO=true"/>
+        <action application="set" data="record_sample_rate=8000"/>
+        <action application="set" data="playback_terminators=#"/>
+        <action application="set" data="ringback=$${uk-ring}"/>
+        <action application="set" data="transfer_ringback=$${uk-ring}"/>
+        <action application="set" data="hangup_after_bridge=false"/>
+        <action application="set" data="continue_on_fail=true"/>
+        <!-- A phone that transfers or parks this call sends it to qd-transfer, never back into this context. -->
+        <action application="set" data="force_transfer_context=qd-transfer"/>
+        <action application="set" data="qd_call=${uuid}"/>
+        <action application="export" data="nolocal:force_transfer_context=qd-transfer"/>
+        <action application="export" data="nolocal:qd_call=${uuid}"/>
+        <action application="answer"/>
+        <!-- source: the address the call really came from (from the network, not the SIP message). -->
+        <action application="httapi" data="{httapi_profile=quaverdesk,url=$${qd_app_url}/webhooks/voice/inbound,to_user=${qd_to_user},gateway=${qd_gateway},source=${network_addr}}"/>
+      </condition>
+    </extension>
+  </context>
+
+  <!-- Calls placed by our own softphones and desk phones (always authenticated). -->
+  <context name="users">
+    <extension name="user-outgoing">
+      <condition field="${user_name}" expression="^(user-[0-9]{1,9}|u[0-9]{1,9}-[a-f0-9]{6})$"/>
+      <condition field="destination_number" expression="^[0-9a-z*#+-]{1,40}$">
+        <action application="set" data="RECORD_STEREO=true"/>
+        <action application="set" data="record_sample_rate=8000"/>
+        <action application="set" data="ringback=$${uk-ring}"/>
+        <action application="set" data="hangup_after_bridge=false"/>
+        <action application="set" data="continue_on_fail=true"/>
+        <!-- Transfers and parks go to qd-transfer. Whoever this phone calls learns who is calling (qd_by). -->
+        <action application="set" data="force_transfer_context=qd-transfer"/>
+        <action application="set" data="qd_call=${uuid}"/>
+        <action application="export" data="nolocal:force_transfer_context=qd-transfer"/>
+        <action application="export" data="nolocal:qd_call=${uuid}"/>
+        <action application="export" data="nolocal:qd_by=${user_name}"/>
+        <action application="httapi" data="{httapi_profile=quaverdesk,url=$${qd_app_url}/webhooks/voice/outgoing,from=${user_name}}"/>
+      </condition>
+    </extension>
+  </context>
+
+  <!--
+    Calls a phone has transferred (blind transfer, or ** to park), and parked
+    calls nobody picked up. qd_call is the call's first leg and qd_by the phone
+    that transferred it, both set by this dialplan or the app, never by a caller.
+    The app decides where the call goes. (Transfers with "talk first" join two
+    calls the phone already has, so they never come here.)
+  -->
+  <context name="qd-transfer">
+    <extension name="transfer">
+      <condition field="${qd_call}" expression="^([0-9a-f-]{36})$"/>
+      <condition field="${qd_by}" expression="^(user-[0-9]{1,9}|u[0-9]{1,9}-[a-f0-9]{6})?$"/>
+      <condition field="destination_number" expression="^[0-9a-z*#+-]{1,40}$">
+        <action application="set" data="hangup_after_bridge=false"/>
+        <action application="set" data="continue_on_fail=true"/>
+        <action application="set" data="ringback=$${uk-ring}"/>
+        <action application="httapi" data="{httapi_profile=quaverdesk,url=$${qd_app_url}/webhooks/voice/transfer,by=${qd_by},call=${qd_call}}"/>
+      </condition>
+    </extension>
+  </context>
+</include>

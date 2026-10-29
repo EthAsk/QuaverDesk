@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true">
+    <testsuites>
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <testsuite name="Feature">
+            <directory>tests/Feature</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>app</directory>
+        </include>
+    </source>
+    <php>
+        <env name="APP_ENV" value="testing"/>
+        <!-- Test-only key ("testing-key-testing-key-32bytes!"); never use it anywhere real. -->
+        <env name="APP_KEY" value="base64:dGVzdGluZy1rZXktdGVzdGluZy1rZXktMzJieXRlcyE="/>
+        <env name="BCRYPT_ROUNDS" value="4"/>
+        <env name="CACHE_STORE" value="array"/>
+        <env name="DB_CONNECTION" value="sqlite"/>
+        <env name="DB_DATABASE" value=":memory:"/>
+        <!-- Tests start as a self-hosted install whatever .env says; hosted-mode tests turn it on themselves. -->
+        <env name="APP_URL" value="http://localhost" force="true"/>
+        <env name="QUAVERDESK_MULTI_TENANT" value="false" force="true"/>
+        <env name="TENANCY_BASE_DOMAIN" value="" force="true"/>
+        <env name="TENANCY_OPERATOR_HOST" value="" force="true"/>
+        <env name="MAIL_MAILER" value="array"/>
+        <env name="QUEUE_CONNECTION" value="sync"/>
+        <env name="SESSION_DRIVER" value="array"/>
+        <env name="VOICE_DOMAIN" value="voice.test"/>
+        <env name="VOICE_WEBHOOK_SECRET" value="testsecret0123456789"/>
+        <env name="VOICE_WEBSOCKET_URL" value="wss://voice.test:7443"/>
+        <env name="VOICE_CONF_DIR" value=""/>
+        <env name="VOICE_CALLER_ID" value="+442079460000"/>
+        <env name="TTS_DRIVER" value="freeswitch"/>
+    </php>
+</phpunit>

@@ -1,0 +1,27 @@
+/.phpunit.cache
+/node_modules
+/public/build
+/public/hot
+/public/storage
+/storage/*.key
+/vendor
+.env
+.env.backup
+.env.production
+*.sqlite
+*.sqlite-journal
+licence-secret*.txt
+.phpunit.result.cache
+npm-debug.log
+.idea
+.vscode
+.DS_Store
+
+# The app user's home is /srv/quaverdesk (see docs/DEPLOYMENT.md)
+/.cache
+/.composer
+/.config
+/.local
+/.npm
+/.bash_history
+storage/freeswitch/

@@ -1,0 +1,45 @@
+name: Bug report
+description: Something isn't working as described
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Security problems:** please don't report them here. Follow SECURITY.md instead.
+
+        **Never paste secrets:** no `.env` contents, API keys, licence keys, SIP passwords, phone numbers or call recordings.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to …
+        2. Click …
+        3. See …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: e.g. a1b2c3d (from git log -1 --oneline)
+    validations:
+      required: true
+  - type: dropdown
+    id: plan
+    attributes:
+      label: Plan
+      options: [Free, Plus, Pro]
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log lines
+      description: From storage/logs. Remove phone numbers, emails and anything secret first.
+      render: text

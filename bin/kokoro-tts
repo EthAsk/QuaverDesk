@@ -1,0 +1,30 @@
+#!/usr/bin/env python3
+"""Kokoro text-to-speech for QuaverDesk: reads text on stdin, writes a WAV file.
+
+    kokoro-tts --model-dir DIR --voice bf_emma [--speed 1.0] --out FILE
+
+DIR holds kokoro-v1.0.onnx and voices-v1.0.bin. Needs: pip install kokoro-onnx soundfile
+"""
+import argparse
+import os
+import sys
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--model-dir", required=True)
+parser.add_argument("--voice", required=True)
+parser.add_argument("--speed", type=float, default=1.0)
+parser.add_argument("--out", required=True)
+args = parser.parse_args()
+
+text = sys.stdin.read().strip()
+if not text:
+    sys.exit("No text on stdin.")
+
+from kokoro_onnx import Kokoro  # noqa: E402  (slow import; only after the arguments are good)
+import soundfile  # noqa: E402
+
+kokoro = Kokoro(os.path.join(args.model_dir, "kokoro-v1.0.onnx"), os.path.join(args.model_dir, "voices-v1.0.bin"))
+# British voices (bf_/bm_) read with British pronunciation.
+lang = "en-gb" if args.voice[:2] in ("bf", "bm") else "en-us"
+samples, rate = kokoro.create(text, voice=args.voice, speed=max(0.5, min(2.0, args.speed)), lang=lang)
+soundfile.write(args.out, samples, rate, subtype="PCM_16")

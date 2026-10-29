@@ -1,0 +1,9 @@
+<configuration name="event_socket.conf" description="Event socket: the app reloads config through it">
+  <settings>
+    <!-- Localhost only. Never expose this port. -->
+    <param name="listen-ip" value="127.0.0.1"/>
+    <param name="listen-port" value="$${qd_esl_port}"/>
+    <param name="password" value="$${qd_esl_password}"/>
+    <param name="apply-inbound-acl" value="loopback.auto"/>
+  </settings>
+</configuration>

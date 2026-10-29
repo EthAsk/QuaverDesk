@@ -1,0 +1,8 @@
+<configuration name="acl.conf" description="Who may send us calls without a password">
+  <network-lists>
+    <!-- SIP trunk providers' addresses, written by the app from Admin → SIP trunks. -->
+    <list name="trunks" default="deny">
+      <X-PRE-PROCESS cmd="include" data="../quaverdesk/acl/*.xml"/>
+    </list>
+  </network-lists>
+</configuration>

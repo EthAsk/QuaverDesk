@@ -1,0 +1,19 @@
+{
+    "name": "quaverdesk",
+    "private": true,
+    "type": "module",
+    "license": "Elastic-2.0",
+    "scripts": {
+        "build": "vite build",
+        "dev": "vite"
+    },
+    "devDependencies": {
+        "laravel-vite-plugin": "^1.2.0",
+        "vite": "^6.2.0"
+    },
+    "dependencies": {
+        "@hotwired/turbo": "^8.0.23",
+        "@laravel/passkeys": "^0.4.0",
+        "jssip": "^3.10.1"
+    }
+}

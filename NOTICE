@@ -1,0 +1,15 @@
+QuaverDesk
+Copyright (c) 2026 Ethan Askew T/A Quaver Desk
+
+Licensed under the Elastic License 2.0. See LICENSE.
+See DISCLAIMER.md for important information about emergency calls, call
+recording, call charges and the absence of any warranty.
+
+This software depends on third-party packages that are installed separately
+(via Composer and npm) and remain under their own licences, which you can find
+in vendor/ and node_modules/ after installation. They include the Laravel
+framework, Laravel Fortify and JsSIP. The voice server, FreeSWITCH, is
+installed separately and is licensed under the MPL 1.1.
+
+FreeSWITCH and Laravel are trademarks of their respective owners. This project
+is not affiliated with or endorsed by either.

@@ -1,0 +1,12 @@
+<include>
+  <!-- Written by the app: qd_domain, qd_app_url, qd_webhook_auth, qd_esl_password, qd_external_ip, hold_music -->
+  <X-PRE-PROCESS cmd="include" data="quaverdesk/vars/*.xml"/>
+
+  <X-PRE-PROCESS cmd="set" data="domain=$${qd_domain}"/>
+  <X-PRE-PROCESS cmd="set" data="internal_sip_port=5060"/>
+  <X-PRE-PROCESS cmd="set" data="external_sip_port=5080"/>
+  <X-PRE-PROCESS cmd="set" data="codecs_internal=OPUS,PCMA,PCMU"/>
+  <X-PRE-PROCESS cmd="set" data="codecs_external=PCMA,PCMU"/>
+  <!-- UK ring tone -->
+  <X-PRE-PROCESS cmd="set" data="uk-ring=%(400,200,400,450);%(400,2000,400,450)"/>
+</include>
