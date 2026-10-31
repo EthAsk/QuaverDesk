@@ -102,6 +102,70 @@ class VoiceTenancyTest extends TestCase
         $this->assertStringContainsString("']user/user-{$bob->id}@voice.test\"", $xml);
     }
 
+    public function test_a_busy_lamp_key_only_reaches_a_colleague_in_the_same_company(): void
+    {
+        $acmeOwner = $this->in($this->acme, fn () => User::query()->first());
+        [$boltOwner, $bob] = $this->in($this->bolt, fn () => [User::query()->first(), User::factory()->create()]);
+
+        $xml = $this->voicePost('/webhooks/voice/outgoing', ['session_id' => self::callId(70), 'from' => 'user-'.$acmeOwner->id, 'Caller-Destination-Number' => $bob->blfId()])->getContent();
+        $this->assertStringNotContainsString('bridge', $xml);
+        $this->assertStringContainsString('no longer here', $xml);
+
+        $xml = $this->voicePost('/webhooks/voice/outgoing', ['session_id' => self::callId(71), 'from' => 'user-'.$boltOwner->id, 'Caller-Destination-Number' => $bob->blfId()])->getContent();
+        $this->assertStringContainsString("']user/user-{$bob->id}@voice.test\"", $xml);
+    }
+
+    public function test_a_call_to_another_companys_number_is_connected_directly_and_counts_for_both(): void
+    {
+        $acmeOwner = $this->in($this->acme, fn () => User::query()->first());
+        $bob = $this->in($this->bolt, fn () => User::factory()->create());
+        $this->numberOnTrunk($this->acme, '+441110000000', '203.0.113.10', "user:{$acmeOwner->id}");
+        $this->numberOnTrunk($this->bolt, '+442079460000', '203.0.113.20', "user:{$bob->id}");
+        $this->in($this->acme, fn () => Setting::put('calling.caller_id', '+441110000000'));
+
+        $xml = $this->voicePost('/webhooks/voice/outgoing', [
+            'session_id' => self::callId(80), 'from' => 'user-'.$acmeOwner->id, 'Caller-Destination-Number' => '020 7946 0000',
+        ])->getContent();
+
+        // Answered here, with the caller's time limit, then Bolt's routing rings Bob: no trunk involved.
+        $this->assertStringContainsString('<execute application="answer"/>', $xml);
+        $this->assertMatchesRegularExpression('/<execute application="sched_hangup" data="\+\d+ ALLOTTED_TIMEOUT"\/>/', $xml);
+        $this->assertStringContainsString("user/user-{$bob->id}@voice.test", $xml);
+        $this->assertStringNotContainsString('sofia/gateway', $xml);
+
+        // Acme: an outside call (its minutes and limits). Bolt: an incoming call from Acme's number; later steps are Bolt's.
+        $out = $this->in($this->acme, fn () => Call::query()->sole());
+        $this->assertSame(['outbound', 'number', Call::LEG_ON_NET, self::callId(80), '+442079460000', null],
+            [$out->direction, $out->decision, $out->leg, $out->parent_sid, $out->to, $out->sip_trunk_id]);
+        $in = $this->in($this->bolt, fn () => Call::query()->sole());
+        $this->assertSame(['inbound', self::callId(80), Call::LEG_ON_NET, '+441110000000', null],
+            [$in->direction, $in->carrier_sid, $in->leg, $in->from, $in->sip_trunk_id]);
+
+        $this->travel(90)->seconds();
+        $this->voicePost('/webhooks/voice/after-dial?next=hangup', ['session_id' => self::callId(80), 'exiting' => 'true'])->assertNoContent();
+
+        $this->assertSame(90, $this->in($this->acme, fn () => Call::query()->sole()->duration_seconds));
+        $this->assertSame(90, $this->in($this->bolt, fn () => Call::query()->sole()->duration_seconds));
+        $this->assertSame(90, $this->in($this->acme, fn () => app(\App\Tenancy\Quotas::class)->outsideSecondsThisMonth()));
+        $this->assertSame(90, $this->in($this->bolt, fn () => app(\App\Tenancy\Quotas::class)->outsideSecondsThisMonth()));
+    }
+
+    public function test_a_suspended_companys_number_is_not_connected_directly(): void
+    {
+        $acmeOwner = $this->in($this->acme, fn () => User::query()->first());
+        $this->numberOnTrunk($this->acme, '+441110000000', '203.0.113.10', "user:{$acmeOwner->id}");
+        $this->numberOnTrunk($this->bolt, '+442079460000', '203.0.113.20', 'hangup');
+        $this->in($this->acme, fn () => Setting::put('calling.caller_id', '+441110000000'));
+        $this->bolt->forceFill(['status' => Tenant::STATUS_SUSPENDED])->save();
+
+        $xml = $this->voicePost('/webhooks/voice/outgoing', [
+            'session_id' => self::callId(81), 'from' => 'user-'.$acmeOwner->id, 'Caller-Destination-Number' => '02079460000',
+        ])->getContent();
+
+        $this->assertStringContainsString('sofia/gateway', $xml);
+        $this->assertSame([], $this->callsIn($this->bolt));
+    }
+
     public function test_a_suspended_company_can_still_call_999_and_112_and_nothing_else(): void
     {
         $owner = $this->in($this->bolt, fn () => User::query()->first());
@@ -199,16 +263,28 @@ class VoiceTenancyTest extends TestCase
             $this->assertStringContainsString('not in service', $xml);
             $this->assertStringNotContainsString('bridge', $xml);
         }
-        $this->assertSame(0, $this->tenancy->everywhere(fn () => Call::query()->count()));
+
+        // Bolt's admins see the refused calls and why; they carry no trunk and no minutes.
+        $refused = $this->in($this->bolt, fn () => Call::query()->orderBy('id')->get());
+        $this->assertSame([self::callId(10), self::callId(11), self::callId(12)], $refused->pluck('carrier_sid')->all());
+        $this->assertSame([Call::STATUS_REFUSED], $refused->pluck('status')->unique()->values()->all());
+        $this->assertSame([0], $refused->pluck('duration_seconds')->unique()->values()->all());
+        $this->assertSame([null], $refused->pluck('sip_trunk_id')->unique()->values()->all());
+        $this->assertStringContainsString("198.51.100.66, which isn't one of the trunk's provider addresses", $refused[0]->reason);
+        $this->assertSame([], $this->callsIn($this->acme));
+
+        // The call's last step finds Bolt from the entry, and leaves it as it was.
+        $this->voicePost('/webhooks/voice/inbound', ['session_id' => self::callId(10), 'exiting' => 'true'])->assertNoContent();
+        $this->assertSame(Call::STATUS_REFUSED, $this->in($this->bolt, fn () => Call::query()->first()->status));
     }
 
-    public function test_on_a_shared_provider_a_trunk_call_must_arrive_at_the_trunks_own_registration(): void
+    public function test_on_a_shared_provider_a_trunk_call_must_arrive_at_the_trunks_own_address_or_registration(): void
     {
         $owner = $this->in($this->bolt, fn () => User::query()->first());
         $number = $this->numberOnTrunk($this->bolt, '+442079460000', '203.0.113.20', "user:{$owner->id}");
         $trunk = $this->in($this->bolt, fn () => $number->trunk);
-        $call = fn (int $n, string $gateway = '') => $this->voicePost('/webhooks/voice/inbound', [
-            'session_id' => self::callId($n), 'Caller-Destination-Number' => '+442079460000', 'source' => '203.0.113.20', 'gateway' => $gateway,
+        $call = fn (int $n, string $gateway = '', string $address = '') => $this->voicePost('/webhooks/voice/inbound', [
+            'session_id' => self::callId($n), 'Caller-Destination-Number' => '+442079460000', 'source' => '203.0.113.20', 'gateway' => $gateway, 'trunk' => $address,
         ])->getContent();
 
         // Nobody else uses that provider: its address is enough, as before.
@@ -217,6 +293,15 @@ class VoiceTenancyTest extends TestCase
         // Acme signs up with the same provider, so the address no longer says whose trunk it is.
         $this->numberOnTrunk($this->acme, '+442079461111', '203.0.113.20', 'hangup');
         $this->assertStringContainsString('not in service', $call(41));
+
+        // Providers that can't register send calls to the trunk's own address, whose name ends in a secret.
+        config(['voip.freeswitch.trunk_address' => 'sip:voice.quaverdesk.test:5080']);
+        $label = $trunk->addressLabel();
+        $this->assertSame("sip:{$label}.quaverdesk.test:5080", $trunk->inboundAddress());
+        $this->assertStringContainsString("']user/user-{$owner->id}@voice.test\"", $call(47, '', strtoupper($label)));
+        $this->assertStringContainsString('not in service', $call(48, '', preg_replace('/[a-f0-9]{12}$/', str_repeat('0', 12), $label)));
+        $acmeLabel = $this->in($this->acme, fn () => SipTrunk::query()->first()->addressLabel());
+        $this->assertStringContainsString('not in service', $call(49, '', $acmeLabel));
 
         // Bolt's trunk registers: calls to its own registration (gw+<name>, which ends in a secret) are Bolt's.
         $this->in($this->bolt, fn () => $trunk->update(['auth_username' => 'bolt', 'auth_password' => 'secret-1', 'register' => true]));
@@ -231,7 +316,11 @@ class VoiceTenancyTest extends TestCase
         // Trunks we supply come from our own carrier, which only sends us our numbers.
         $trunk->forceFill(['supplied_by_operator' => true, 'register' => false])->save();
         $this->assertStringContainsString('bridge', $call(46));
-        $this->assertSame([self::callId(40), self::callId(42), self::callId(46)], $this->callsIn($this->bolt));
+        $answered = $this->in($this->bolt, fn () => Call::query()->where('status', '!=', Call::STATUS_REFUSED)->orderBy('id')->pluck('carrier_sid')->all());
+        $this->assertSame([self::callId(40), self::callId(47), self::callId(42), self::callId(46)], $answered);
+        $refused = $this->in($this->bolt, fn () => Call::query()->where('status', Call::STATUS_REFUSED)->pluck('reason')->unique()->values()->all());
+        $this->assertCount(1, $refused);
+        $this->assertStringContainsString("wasn't sent to this trunk's own address", $refused[0]);
     }
 
     public function test_later_steps_of_a_call_stay_with_its_company(): void
@@ -251,6 +340,7 @@ class VoiceTenancyTest extends TestCase
     {
         $owner = $this->in($this->bolt, fn () => User::query()->first());
         $this->numberOnTrunk($this->bolt, '+442079460000', '203.0.113.20', 'hangup');
+        $this->in($this->acme, fn () => Setting::put('calling.caller_id', '+441110000000'));
 
         $xml = $this->voicePost('/webhooks/voice/outgoing', ['session_id' => self::callId(30), 'from' => 'user-'.$owner->id, 'Caller-Destination-Number' => '07700900123'])->getContent();
         $this->assertStringNotContainsString('+441110000000', $xml);

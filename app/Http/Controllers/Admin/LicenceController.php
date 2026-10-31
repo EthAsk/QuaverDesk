@@ -18,7 +18,7 @@ class LicenceController extends Controller
     public function show(LicenceManager $licences, Quotas $quotas): View
     {
         if ($licences->hosted()) {
-            return view('admin.plan', ['tenant' => $quotas->tenant(), 'quotas' => $quotas, 'people' => User::query()->count(),
+            return view('admin.plan', ['tenant' => $quotas->tenant(), 'quotas' => $quotas, 'people' => User::query()->seated()->count(),
                 'numbers' => PhoneNumber::query()->count()]);
         }
 

@@ -144,6 +144,23 @@ class TenantPlansTest extends TestCase
         $this->assertStringContainsString("used this month's 10 minutes", $this->dial($this->acme));
     }
 
+    public function test_a_call_that_never_hung_up_stops_counting_and_is_closed(): void
+    {
+        $this->acme->forceFill(['monthly_minutes' => 10])->save();
+        // Rang yesterday, but its hang-up never arrived.
+        $this->in($this->acme, fn () => Call::query()->create([
+            'carrier_sid' => (string) Str::uuid(), 'direction' => 'inbound', 'from' => '+447700900123', 'to' => '+442079460000',
+            'decision' => 'ring_group', 'status' => 'ringing',
+        ])->forceFill(['created_at' => now()->subHours(18)])->save());
+        $this->assertStringContainsString('bridge', $this->dial($this->acme));
+
+        $this->artisan('calls:close-stale')->assertSuccessful();
+        $closed = $this->in($this->acme, fn () => Call::query()->where('direction', 'inbound')->sole());
+        $this->assertSame(['ended', 0], [$closed->status, $closed->duration_seconds]);
+        // A call still within the longest allowed length is left alone.
+        $this->assertNull($this->in($this->acme, fn () => Call::query()->where('direction', 'outbound')->sole()->duration_seconds));
+    }
+
     public function test_the_whole_service_has_its_own_caps(): void
     {
         config(['tenancy.max_concurrent_calls' => 2, 'tenancy.max_minutes_per_day' => 30]);

@@ -3,8 +3,10 @@
 @section('content')
     <div class="page-head">
         <h1>Users</h1>
-        <p class="muted">{{ $users->count() }} of {{ $maxUsers }} users allowed on your plan. Colleagues call each other by extension: 3 to 5 digits, starting with 2 to 8.</p>
+        <p class="muted">{{ $seated }} of {{ $maxUsers }} users allowed on your plan. Forward-only contacts are free and don't count. Colleagues call each other by extension: 3 to 5 digits, starting with 2 to 8.</p>
         @error('extension', 'extension')<div class="flash bad">{{ $message }}</div>@enderror
+        @error('mobile', 'mobile')<div class="flash bad">{{ $message }}</div>@enderror
+        @error('type', 'type')<div class="flash bad">{{ $message }}</div>@enderror
     </div>
 
     @if (session('invited'))
@@ -12,6 +14,7 @@
             <strong>{{ session('invited')['email'] }}</strong> was added and emailed a link to set their password (valid for {{ \App\Support\Invites::DAYS }} days).
             If the email doesn't arrive, send them this link another way. It won't be shown again:
             <code class="codes" style="margin-top:8px;white-space:normal;word-break:break-all">{{ session('invited')['link'] }}</code>
+            <button class="btn ghost small" type="button" data-copy="{{ session('invited')['link'] }}" style="margin-top:6px">Copy link</button>
         </div>
     @endif
 
@@ -32,7 +35,9 @@
                         </form>
                     </td>
                     <td>
-                        @if ($u->isOwner())
+                        @if ($u->isForwardOnly())
+                            <span class="pill">Forward only</span>
+                        @elseif ($u->isOwner())
                             <span class="pill">Owner</span>
                         @else
                             <form method="POST" action="{{ route('admin.users.update', $u) }}" class="row">
@@ -44,17 +49,50 @@
                             </form>
                         @endif
                     </td>
-                    <td>{!! $u->hasTwoFactorEnabled() ? '<span class="pill">On</span>' : '<span class="pill off">Off</span>' !!}</td>
+                    <td>@if ($u->isForwardOnly()) <span class="muted">No sign-in</span> @else {!! $u->hasTwoFactorEnabled() ? '<span class="pill">On</span>' : '<span class="pill off">Off</span>' !!} @endif</td>
                     <td>
+                        @if ($u->isForwardOnly())
+                            <form method="POST" action="{{ route('admin.users.mobile', $u) }}" class="rename" style="margin-bottom:6px">
+                                @csrf @method('PATCH')
+                                <input type="tel" name="mobile" value="{{ $u->mobile ? '0'.substr($u->mobile, 3) : '' }}" placeholder="No mobile: voicemail"
+                                       style="width:11em" aria-label="Mobile for {{ $u->name }}">
+                                <button class="btn ghost small" type="submit">Save</button>
+                            </form>
+                            @if ($u->mobile && ! $u->mobile_verified_at)
+                                <form method="POST" action="{{ route('admin.users.confirm-mobile', $u) }}" class="row" style="margin-bottom:6px">
+                                    @csrf
+                                    <span class="small error">Not confirmed: calls go to voicemail.</span>
+                                    <button class="btn ghost small" type="submit">Call to confirm</button>
+                                </form>
+                            @endif
+                        @endif
                         <div class="row">
-                            @unless ($u->is(auth()->user()))
+                            @unless ($u->is(auth()->user()) || $u->isForwardOnly())
                                 <form method="POST" action="{{ route('admin.users.invite', $u) }}" data-confirm="Email {{ $u->name }} a link to set a new password?">
                                     @csrf
                                     <button class="btn ghost small" type="submit">Email sign-in link</button>
                                 </form>
                             @endunless
                             @unless ($u->isOwner() || $u->is(auth()->user()))
-                                <form method="POST" action="{{ route('admin.users.destroy', $u) }}" data-confirm="Remove {{ $u->name }}?">
+                                @if ($u->isForwardOnly())
+                                    <form method="POST" action="{{ route('admin.users.type', $u) }}" class="row"
+                                          data-confirm="Give {{ $u->name }} a sign-in? They'll count as one of your plan's users and be emailed a link to set a password.">
+                                        @csrf @method('PATCH')
+                                        <select name="type" aria-label="Role for {{ $u->name }} with a sign-in">
+                                            <option value="user">User</option>
+                                            <option value="admin">Admin</option>
+                                        </select>
+                                        <button class="btn ghost small" type="submit">Give a sign-in</button>
+                                    </form>
+                                @else
+                                    <form method="POST" action="{{ route('admin.users.type', $u) }}"
+                                          data-confirm="Make {{ $u->name }} forward-only? They'll be signed out everywhere, their desk phones and passkeys removed, and they'll leave their ring groups. Calls will ring their confirmed mobile or go to voicemail.">
+                                        @csrf @method('PATCH')
+                                        <input type="hidden" name="type" value="forward_only">
+                                        <button class="btn ghost small" type="submit">Make forward-only</button>
+                                    </form>
+                                @endif
+                                <form method="POST" action="{{ route('admin.users.destroy', $u) }}" data-confirm="Remove {{ $u->name }}? Their own voicemail box and its messages are deleted too.">
                                     @csrf @method('DELETE')
                                     <button class="btn ghost small" type="submit">Remove</button>
                                 </form>
@@ -69,7 +107,7 @@
 
     <div class="card">
         <h2>Add a user</h2>
-        @php($full = $users->count() >= $maxUsers)
+        @php($full = $seated >= $maxUsers)
         @if ($full && ! $bandOffer)
             <p class="muted">You've reached your plan's limit of {{ $maxUsers }} users.
                 @if ($plan === \App\Domain\Licensing\Plan::Free) Upgrade to Plus for more. @endif</p>
@@ -108,5 +146,35 @@
                 <button class="btn" type="submit">{{ $full ? 'Upgrade and add user' : 'Add user' }}</button>
             </form>
         @endif
+    </div>
+
+    <div class="card">
+        <h2>Add a forward-only contact</h2>
+        <p class="muted">Free, with no limit. For people who don't need the phone system day to day: they have an extension but no sign-in,
+            softphone or desk phone, so there's nothing to log in to or lose. Their calls ring their mobile. If they have no mobile,
+            or don't answer, callers leave a voicemail that's emailed to them with the audio attached.</p>
+        <form method="POST" action="{{ route('admin.users.store') }}" style="max-width:480px">
+            @csrf
+            <input type="hidden" name="role" value="forward_only">
+            <div class="field">
+                <label for="fo-name">Name</label>
+                <input id="fo-name" type="text" name="name" value="{{ old('role') === 'forward_only' ? old('name') : '' }}" required>
+            </div>
+            <div class="field">
+                <label for="fo-email">Email for voicemail</label>
+                <input id="fo-email" type="email" name="email" value="{{ old('role') === 'forward_only' ? old('email') : '' }}" required>
+            </div>
+            <div class="field">
+                <label for="fo-mobile">Mobile (optional)</label>
+                <input id="fo-mobile" type="tel" name="mobile" value="{{ old('role') === 'forward_only' ? old('mobile') : '' }}" placeholder="07700 900123">
+                @error('mobile')<div class="error">{{ $message }}</div>@enderror
+                <div class="small muted">We call it once and they press 1 to confirm it's theirs. Until then, calls go to voicemail.</div>
+            </div>
+            <div class="field" style="max-width:200px">
+                <label for="fo-extension">Extension</label>
+                <input id="fo-extension" type="text" name="extension" inputmode="numeric" maxlength="5" placeholder="{{ \App\Models\User::nextExtension() }}">
+            </div>
+            <button class="btn" type="submit">Add contact</button>
+        </form>
     </div>
 @endsection

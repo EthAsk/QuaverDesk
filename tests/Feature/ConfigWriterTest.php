@@ -54,6 +54,11 @@ class ConfigWriterTest extends TestCase
         $this->assertStringContainsString('value="Ann  script"', $xml);
         $this->assertStringContainsString('<variable name="effective_caller_id_number" value="'.$user->extension.'"/>', $xml);
         $this->assertSame('0640', substr(sprintf('%o', fileperms($this->dir.'/vars/quaverdesk.xml')), -4));
+
+        // Busy lamps show their calls under a secret address, never the guessable user-N.
+        $this->assertMatchesRegularExpression('/^blf-[0-9a-f]{20}$/', $user->blfId());
+        $this->assertStringContainsString('<variable name="presence_id" value="'.$user->blfId().'@voice.test"/>', $xml);
+        $this->assertStringNotContainsString('presence_id" value="user-', $xml);
     }
 
     public function test_trunks_become_gateways_and_an_address_allow_list(): void
@@ -62,11 +67,27 @@ class ConfigWriterTest extends TestCase
         $this->write();
 
         $gateways = file_get_contents($this->dir.'/gateways/trunks.xml');
-        $this->assertStringContainsString('<gateway name="'.$trunk->gatewayNames()[0].'"><param name="proxy" value="sbc.example.net:5061"/><param name="register-transport" value="tls"/>', $gateways);
+        $this->assertStringContainsString('<gateway name="'.$trunk->gatewayNames()[0].'"><param name="proxy" value="sbc.example.net:5061;transport=tls"/><param name="register-transport" value="tls"/>', $gateways);
         $this->assertStringContainsString('<param name="register" value="false"/>', $gateways);
         $this->assertStringContainsString('absolute_codec_string" value="PCMA,PCMU"', $gateways);
         $this->assertStringContainsString('<node type="allow" cidr="203.0.113.10/32"/>', file_get_contents($this->dir.'/acl/trunks.xml'));
         $this->assertStringContainsString('tls-sip-port', file_get_contents($this->dir.'/sofia/internal-tls.xml'));
+        $this->assertStringNotContainsString('rtp_secure_media', $gateways);
+    }
+
+    public function test_secure_trunks_use_tls_and_encrypted_audio(): void
+    {
+        $trunk = $this->trunk(['origination_uris' => ['sip:acme.pstn.twilio.com'], 'secure' => true]);
+        $this->write();
+
+        $gateways = file_get_contents($this->dir.'/gateways/trunks.xml');
+        $this->assertStringContainsString('<gateway name="'.$trunk->gatewayNames()[0].'"><param name="proxy" value="acme.pstn.twilio.com:5061;transport=tls"/><param name="register-transport" value="tls"/>', $gateways);
+        $this->assertStringContainsString('<variable name="rtp_secure_media" value="mandatory:AES_CM_128_HMAC_SHA1_80:AES_CM_128_HMAC_SHA1_32" direction="outbound"/>', $gateways);
+
+        // TLS for trunks sits beside plain SIP (other providers), not instead of it.
+        $tls = file_get_contents($this->dir.'/sofia-external/tls.xml');
+        $this->assertStringContainsString('<param name="tls-sip-port" value="5081"/>', $tls);
+        $this->assertStringNotContainsString('tls-only', $tls);
     }
 
     public function test_changed_gateways_and_removed_users_are_reported(): void

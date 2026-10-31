@@ -48,6 +48,8 @@ return [
         'tls' => (bool) env('VOICE_TLS', true),
         // Public address trunk providers send calls to, shown in the trunk wizard.
         'trunk_address' => env('VOICE_TRUNK_ADDRESS'),
+        // Port trunk providers use for TLS (secure trunks), with the certificate for the address above. Needs TLS on.
+        'trunk_tls_port' => (int) env('VOICE_TRUNK_TLS_PORT', 5081),
         // Event socket, used to reload config after changes. Keep it on localhost.
         'esl_host' => env('VOICE_ESL_HOST', '127.0.0.1'),
         'esl_port' => (int) env('VOICE_ESL_PORT', 8021),

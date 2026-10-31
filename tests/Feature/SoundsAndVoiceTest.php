@@ -79,6 +79,50 @@ class SoundsAndVoiceTest extends TestCase
         $this->assertSame($sound->url(), $config->greetingSound);
     }
 
+    public function test_an_admin_records_a_sound_by_dialling_star_zero(): void
+    {
+        $ffmpeg = (new ExecutableFinder())->find('ffmpeg');
+        if ($ffmpeg === null) {
+            $this->markTestSkipped('ffmpeg is not installed.');
+        }
+        config(['voip.ffmpeg' => $ffmpeg]);
+        $owner = auth()->user();
+        $this->acknowledgeTerms($owner);
+
+        $xml = $this->voicePost('/webhooks/voice/outgoing', [
+            'session_id' => self::callId(700), 'from' => 'user-'.$owner->id, 'Caller-Destination-Number' => '*0',
+        ])->getContent();
+        $this->assertMatchesRegularExpression('#<record file="voicemail.wav" name="recording" limit="600" [^>]*action="[^"]+/webhooks/voice/sound-recorded"/>#', $xml);
+
+        $recorded = fn () => $this->voicePost('/webhooks/voice/sound-recorded', ['session_id' => self::callId(700)], [
+            'recording' => UploadedFile::fake()->createWithContent('voicemail.wav', self::wav(3)),
+        ])->getContent();
+        $this->assertStringContainsString('Saved', $recorded());
+
+        $sound = Sound::query()->sole();
+        $this->assertStringStartsWith('Recorded on the phone', $sound->name);
+        $this->assertEqualsWithDelta(3.0, $sound->seconds, 0.2);
+
+        $recorded(); // sent again as the call ends
+        $this->assertSame(1, Sound::query()->count());
+    }
+
+    public function test_only_admins_can_record_a_sound_by_phone(): void
+    {
+        $user = User::factory()->create();
+        $this->acknowledgeTerms($user);
+
+        $xml = $this->voicePost('/webhooks/voice/outgoing', [
+            'session_id' => self::callId(701), 'from' => 'user-'.$user->id, 'Caller-Destination-Number' => '*0',
+        ])->getContent();
+        $this->assertStringNotContainsString('<record', $xml);
+
+        $this->voicePost('/webhooks/voice/sound-recorded', ['session_id' => self::callId(701)], [
+            'recording' => UploadedFile::fake()->createWithContent('voicemail.wav', self::wav(3)),
+        ]);
+        $this->assertSame(0, Sound::query()->count());
+    }
+
     public function test_files_that_are_not_audio_are_refused(): void
     {
         $path = $this->dir.'/playlist.mp3';

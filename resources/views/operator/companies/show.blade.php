@@ -7,6 +7,7 @@
             <a href="{{ $company->url() }}" rel="noopener">{{ parse_url($company->url(), PHP_URL_HOST) }}</a>
             · {!! $company->isActive() ? '<span class="pill">Active</span>' : '<span class="pill off">Suspended</span>' !!}
             · added {{ $company->created_at->format('j M Y') }}
+            @if (Route::has('operator.calls'))· <a href="{{ route('operator.calls', ['company' => $company->id]) }}">Call logs</a>@endif
         </p>
     </div>
 
@@ -166,6 +167,22 @@
                     <td>{{ $v->started_at ? ($v->ends_at?->isFuture() ? 'In progress' : 'Ended') : 'Not started' }}</td></tr>
             @empty
                 <tr><td colspan="4" class="muted">None.</td></tr>
+            @endforelse
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card">
+        <h2>Desk phone log</h2>
+        <p class="small muted">Settings downloads and refusals, and who showed or changed phone passwords (the company's last 30).</p>
+        <table>
+            <thead><tr><th>When</th><th>Phone</th><th>What</th><th>Who</th><th>From</th><th>Details</th></tr></thead>
+            <tbody>
+            @forelse ($phoneLog as $e)
+                <tr><td>{{ $e->created_at->timezone('Europe/London')->format('j M H:i') }}</td><td>{{ $e->phone_label ?? '—' }}</td><td>{{ $e->label() }}</td>
+                    <td>{{ $e->user?->name ?? ($e->user_id ? 'Removed user' : 'The phone') }}</td><td><code>{{ $e->ip }}</code></td><td class="small muted">{{ $e->detail }}</td></tr>
+            @empty
+                <tr><td colspan="6" class="muted">None.</td></tr>
             @endforelse
             </tbody>
         </table>

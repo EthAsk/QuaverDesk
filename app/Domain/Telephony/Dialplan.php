@@ -15,6 +15,9 @@ use Closure;
  *     (by extension) can always be called, on every plan. Extensions start 2–8
  *     so they can never be mistaken for 999, a UK short code (1xx) or a UK
  *     number (0…). ** parks a call; **1 to **9 park on, or pick up from, that slot.
+ *     *0 records a sound (admins only; see VoiceController). *00 is your
+ *     voicemail: play messages, record greetings (VoicemailMenuController).
+ *     blf-… is a busy lamp key pressed: the colleague it watches.
  *  3. International and premium-rate destinations are blocked unless an
  *     admin allowed them.
  */
@@ -25,10 +28,13 @@ final class Dialplan
     /** A colleague's extension: 3–5 digits starting 2–8. */
     public const EXTENSION = '/^[2-8][0-9]{2,4}$/';
 
+    /** A busy lamp key's address (User::blfId). */
+    public const BLF = '/^blf-[0-9a-f]{20}$/';
+
     /**
      * @param  list<string>  $allowedInternationalPrefixes  e.g. ['+353'] (E.164 prefixes an admin enabled)
-     * @param  ?Closure(string): ?string  $extensions  extension => that person's identity (user-12),
-     *                                               a ring group (ring_group:3), or null
+     * @param  ?Closure(string): ?string  $extensions  extension or busy lamp address => that person's
+     *                                               identity (user-12), a ring group (ring_group:3), or null
      */
     public function __construct(
         private readonly array $allowedInternationalPrefixes = [],
@@ -45,9 +51,26 @@ final class Dialplan
             return DialDecision::client($m[1]);
         }
 
+        // A busy lamp key, pressed: the colleague it watches (see User::blfId), if they're in the caller's company.
+        if (preg_match(self::BLF, $to)) {
+            $identity = $this->extensions ? ($this->extensions)($to) : null;
+
+            return $identity !== null && str_starts_with($identity, 'user-')
+                ? DialDecision::client($identity)
+                : DialDecision::reject('That colleague is no longer here.');
+        }
+
         // Call parking: ** (any free slot) or **1 to **9.
         if (preg_match('/^\*\*([1-9])?$/', $to, $m)) {
             return DialDecision::park(isset($m[1]) ? (int) $m[1] : null);
+        }
+
+        // Record a sound from the phone. No one is user-0, so *0 is free.
+        if ($to === '*0') {
+            return DialDecision::recordSound();
+        }
+        if ($to === '*00') {
+            return DialDecision::voicemail();
         }
 
         // Desk-phone shortcut: *12 calls colleague user-12.

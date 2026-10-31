@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Tenancy\BelongsToTenant;
 use Database\Factories\UserFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -46,6 +47,7 @@ class User extends Authenticatable implements PasskeyUser
             'email_verified_at' => 'datetime',
             'mobile_verified_at' => 'datetime',
             'follow_me_delay' => 'integer',
+            'forward_only' => 'boolean',
             'two_factor_confirmed_at' => 'datetime',
             'password' => 'hashed',
             'sip_secret' => 'encrypted',
@@ -60,6 +62,21 @@ class User extends Authenticatable implements PasskeyUser
     public function isOwner(): bool
     {
         return $this->role === self::ROLE_OWNER;
+    }
+
+    /**
+     * No sign-in, softphone or desk phone: calls ring their mobile, or go to
+     * their voicemail, which is emailed to them. Free: not counted against the plan.
+     */
+    public function isForwardOnly(): bool
+    {
+        return (bool) $this->forward_only;
+    }
+
+    /** People who count against the plan's users (everyone but forward-only contacts). */
+    public function scopeSeated(Builder $q): Builder
+    {
+        return $q->where('forward_only', false);
     }
 
     public function hasTwoFactorEnabled(): bool
@@ -101,6 +118,17 @@ class User extends Authenticatable implements PasskeyUser
     public function carrierIdentity(): string
     {
         return 'user-'.$this->getKey();
+    }
+
+    /**
+     * The address colleagues' busy lamp (BLF) keys watch and dial for this
+     * person, e.g. blf-3f9a…. Every company's phones share one SIP domain, so
+     * it is a secret derived from the app key rather than the extension or
+     * user id: only phones of this person's own company are given it.
+     */
+    public function blfId(): string
+    {
+        return 'blf-'.substr(hash_hmac('sha256', 'blf:'.$this->getKey(), (string) config('app.key')), 0, 20);
     }
 
     /** The softphone's SIP password, created on first use. */

@@ -11,6 +11,7 @@ use App\Domain\Routing\InboundRouter;
 use App\Domain\Routing\RoutingContext;
 use App\Domain\Telephony\DialDecision;
 use App\Domain\Telephony\Dialplan;
+use App\Http\Controllers\Admin\SoundController;
 use App\Http\Controllers\Controller;
 use App\Jobs\StoreRecording;
 use App\Models\Acknowledgement;
@@ -29,12 +30,17 @@ use App\Support\LicenceManager;
 use App\Support\CallLimits;
 use App\Support\RecordingPolicy;
 use App\Support\RouteCallbackUrls;
+use App\Tenancy\CallTenant;
+use App\Tenancy\Tenancy;
 use App\Voice\CallRequest;
 use App\Voice\ParkingLot;
+use App\Voice\PhoneSounds;
 use App\Voice\VoiceServer;
+use App\Voice\VoicemailMenu;
 use App\Voice\VoiceUrl;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -50,6 +56,10 @@ class VoiceController extends Controller
     public const MSG_NOT_IN_SERVICE = 'Sorry, this number is not in service.';
     public const MSG_PICK_UP_HOW = 'To pick up a parked call, dial star star and the slot number.';
     public const MSG_CANT_TRANSFER = 'Sorry, this call cannot be transferred.';
+    public const MSG_RECORD_SOUND = 'Record your message after the tone. Press hash when you have finished.';
+    public const MSG_SOUND_SAVED = 'Saved. You will find it on the Sounds page, where you can rename it and choose where it plays.';
+    public const MSG_SOUND_NOT_SAVED = 'Sorry, nothing was recorded. Hang up and try again.';
+    public const MSG_SOUND_ADMINS_ONLY = 'Only an admin can record sounds.';
     public const MSG_CONFIRM_MOBILE = 'Hello. This call is to confirm your mobile for your work phone, so your calls can ring it too. To confirm, press 1.';
 
     public function __construct(
@@ -59,6 +69,8 @@ class VoiceController extends Controller
         private readonly RecordingPolicy $recordingPolicy,
         private readonly CallLimits $limits,
         private readonly ParkingLot $parking,
+        private readonly CallTenant $callTenant,
+        private readonly Tenancy $tenancy,
     ) {
     }
 
@@ -81,22 +93,31 @@ class VoiceController extends Controller
             $decision = $this->decide($caller, $to);
         }
 
+        // Another company on this service has the number: connect it here rather than through two trunks.
+        $onNet = $caller && $decision->type === DialDecision::NUMBER ? $this->callTenant->onNet((string) $decision->target) : null;
+        if ($onNet !== null && $call->callId() !== null) {
+            return $this->connectOnNet($call, $caller, $onNet);
+        }
+
         // The trunk an outside call will use, recorded for usage (and billing, on trunks we supply).
         $trunk = in_array($decision->type, [DialDecision::NUMBER, DialDecision::EMERGENCY], true) ? SipTrunk::defaultOutbound() : null;
 
         $this->log($call, [
             'user_id' => $caller?->id,
             'sip_trunk_id' => $trunk?->id,
-            'direction' => in_array($decision->type, [DialDecision::CLIENT, DialDecision::RING_GROUP, DialDecision::PARK], true) ? 'internal' : 'outbound',
+            'direction' => in_array($decision->type, [DialDecision::CLIENT, DialDecision::RING_GROUP, DialDecision::PARK, DialDecision::RECORD_SOUND, DialDecision::VOICEMAIL], true) ? 'internal' : 'outbound',
             'from' => $caller?->carrierIdentity(),
             'to' => $decision->target ?? substr($to, 0, 64),
             'decision' => $decision->type,
             'status' => $decision->type === DialDecision::REJECT ? 'rejected' : 'initiated',
+            'reason' => $decision->type === DialDecision::REJECT ? $decision->message : null,
         ]);
 
         return $this->reply(match ($decision->type) {
             DialDecision::RING_GROUP => $this->router->route(new Destination(Destination::RING_GROUP, (int) $decision->target), new RoutingContext()),
             DialDecision::PARK => $this->pickUp($decision),
+            DialDecision::RECORD_SOUND => $this->recordSound($caller),
+            DialDecision::VOICEMAIL => app(VoicemailMenu::class)->start($caller),
             default => $this->dialOut($decision, $trunk, $caller),
         });
     }
@@ -142,6 +163,7 @@ class VoiceController extends Controller
                 'to' => $decision->type === DialDecision::PARK ? '**'.$slot : ($decision->target ?? substr($call->to(), 0, 64)),
                 'decision' => $decision->type,
                 'status' => $decision->type === DialDecision::REJECT ? 'rejected' : 'initiated',
+                'reason' => $decision->type === DialDecision::REJECT ? $decision->message : null,
             ]);
         }
 
@@ -177,28 +199,88 @@ class VoiceController extends Controller
             $number = PhoneNumber::query()->firstWhere('e164', $e164);
         }
 
-        $this->log($call, [
-            'sip_trunk_id' => $number?->sip_trunk_id,
-            'direction' => 'inbound',
-            'from' => $call->from(),
-            'to' => $e164 ?? $call->to(),
-            'decision' => $number ? Destination::parse($number->destination)?->type : 'reject',
-            'status' => 'ringing',
-        ]);
-
-        if ($number === null || ! Acknowledgement::currentAccepted() || ! $this->licences->allows(Feature::PhoneNumbers)) {
-            return $this->reply((new CallScript())->say(self::MSG_NOT_IN_SERVICE)->hangup());
+        // A secure trunk's calls come with encrypted audio (srtp, set by the voice server); others are refused.
+        $insecure = $number?->trunk?->secure && (string) $request->input('srtp') === '';
+        if ($insecure) {
+            Log::warning('Refused a call on a secure trunk that came without encrypted audio.', ['number' => $number->e164, 'trunk_id' => $number->sip_trunk_id]);
         }
 
-        $record = $number->record_calls && $this->recordingPolicy->canRecordCalls();
+        return $this->reply($this->takeCall($call, $number, $e164 ?? $call->to(), $call->from(), $insecure));
+    }
 
-        return $this->reply($this->router->forNumber(
+    /**
+     * A call to one of the current company's numbers, through its trunk or
+     * directly from another company here (on-net): logged as an incoming call,
+     * then routed like any other. Services are fetched here, not kept from the
+     * constructor, because an on-net call switches company mid-request.
+     */
+    private function takeCall(CallRequest $call, ?PhoneNumber $number, string $to, string $from, bool $insecure = false, bool $onNet = false): CallScript
+    {
+        $licences = app(LicenceManager::class);
+        $recordingPolicy = app(RecordingPolicy::class);
+
+        $refused = match (true) {
+            $number === null => 'Refused: no phone number here matches the number called. Add it under Phone numbers.',
+            $insecure => 'Refused: the trunk is secure, but the call came without encrypted audio. Check Secure Trunking is on at the provider.',
+            ! Acknowledgement::currentAccepted() => 'Refused: an admin needs to accept the terms of use before calls are taken.',
+            ! $licences->allows(Feature::PhoneNumbers) => "Refused: this plan doesn't include phone numbers.",
+            default => null,
+        };
+
+        $this->log($call, [
+            'sip_trunk_id' => $onNet ? null : $number?->sip_trunk_id,
+            'leg' => $onNet ? Call::LEG_ON_NET : null,
+            'direction' => 'inbound',
+            'from' => $from,
+            'to' => $to,
+            'decision' => $refused === null ? Destination::parse($number->destination)?->type : 'reject',
+            'status' => $refused === null ? 'ringing' : 'rejected',
+            'reason' => $refused,
+        ]);
+
+        if ($refused !== null) {
+            return (new CallScript())->say(self::MSG_NOT_IN_SERVICE)->hangup();
+        }
+
+        $record = $number->record_calls && $recordingPolicy->canRecordCalls();
+
+        return app(InboundRouter::class)->forNumber(
             Destination::parse($number->destination) ?? Destination::hangup(),
             $number->schedule(),
             Destination::parse($number->closed_destination),
             now()->toDateTimeImmutable(),
             $record,
-            $record ? $this->recordingPolicy->disclosure() : null,
+            $record ? $recordingPolicy->disclosure() : null,
+        );
+    }
+
+    /**
+     * A person here called a number another company on this service has (or
+     * their own). It is connected directly, never out through one trunk and
+     * back in through another. Each side logs it as it would a call through
+     * the trunks: an outside call for the caller (their minutes and limits,
+     * already checked) and an incoming call for the company called (their
+     * minutes, their routing). The rest of the call belongs to the company called.
+     */
+    private function connectOnNet(CallRequest $call, User $caller, PhoneNumber $number): Response
+    {
+        $callId = (string) $call->callId();
+        Call::query()->create([
+            'carrier_sid' => (string) Str::uuid(),
+            'parent_sid' => $callId,
+            'leg' => Call::LEG_ON_NET,
+            'user_id' => $caller->id,
+            'direction' => 'outbound',
+            'from' => $caller->carrierIdentity(),
+            'to' => $number->e164,
+            'decision' => DialDecision::NUMBER,
+            'status' => 'completed',
+        ]);
+        $maxSeconds = $this->limits->maxSeconds($caller);
+        $callerId = CallerId::default() ?? 'anonymous';
+
+        return $this->tenancy->run($number->tenant, fn () => $this->reply(
+            (new CallScript())->answer($maxSeconds)->append($this->takeCall($call, $number, $number->e164, $callerId, onNet: true)),
         ));
     }
 
@@ -313,6 +395,22 @@ class VoiceController extends Controller
         return $call->exiting() ? $this->ended($call) : $this->reply((new CallScript())->hangup());
     }
 
+    /** An admin dialled *0 and recorded a sound; the audio comes with this request. */
+    public function soundRecorded(Request $request, PhoneSounds $sounds): Response
+    {
+        $call = new CallRequest($request);
+        $log = Call::query()->where('carrier_sid', (string) $call->callId())->first();
+        $saved = $log?->decision === DialDecision::RECORD_SOUND
+            && $log->user?->isAdmin()
+            && $sounds->save($call, 'Recorded on the phone '.now()->format('j M, H:i')) !== null;
+
+        if ($call->exiting()) {
+            return $this->ended($call);
+        }
+
+        return $this->reply((new CallScript())->say($saved ? self::MSG_SOUND_SAVED : self::MSG_SOUND_NOT_SAVED)->hangup());
+    }
+
     private function saveRecording(CallRequest $call, string $kind, ?int $mailboxId): bool
     {
         $file = $call->recording();
@@ -364,14 +462,18 @@ class VoiceController extends Controller
         return $byteRate > 0 ? (int) round(max(0, filesize($path) - 44) / $byteRate) : 0;
     }
 
-    private function ended(CallRequest $call): Response
+    /** Closes the call's log (used by VoicemailMenuController too). */
+    public function ended(CallRequest $call): Response
     {
         if ($id = $call->callId()) {
             $this->settleMobileLegs($id, $call->answeredLeg());
             $logs = Call::query()->whereNull('duration_seconds')
                 ->where(fn ($q) => $q->where('carrier_sid', $id)->orWhere(fn ($q) => $q->where('parent_sid', $id)->where('leg', Call::LEG_TRANSFER)))
                 ->get();
-            foreach ($logs as $log) {
+            // An on-net call's caller side is logged in the calling company, while the call itself is now the called company's.
+            $onNet = $this->tenancy->everywhere(fn () => Call::query()->whereNull('duration_seconds')
+                ->where('parent_sid', $id)->where('leg', Call::LEG_ON_NET)->get());
+            foreach ($logs->concat($onNet) as $log) {
                 $log->forceFill([
                     'status' => in_array($log->status, ['initiated', 'ringing'], true) ? 'ended' : $log->status,
                     'duration_seconds' => max(0, (int) $log->created_at->diffInSeconds(now(), true)),
@@ -442,8 +544,10 @@ class VoiceController extends Controller
         $decision = (new Dialplan(
             allowedInternationalPrefixes: Setting::get('calling.international_prefixes', []),
             premiumAllowed: (bool) Setting::get('calling.premium_allowed', false),
-            extensions: fn (string $ext) => User::query()->firstWhere('extension', $ext)?->carrierIdentity()
-                ?? (($group = RingGroup::query()->where('extension', $ext)->value('id')) ? 'ring_group:'.$group : null),
+            extensions: fn (string $ext) => preg_match(Dialplan::BLF, $ext)
+                ? User::query()->seated()->get()->first(fn (User $u) => hash_equals($u->blfId(), $ext))?->carrierIdentity()
+                : (User::query()->firstWhere('extension', $ext)?->carrierIdentity()
+                    ?? (($group = RingGroup::query()->where('extension', $ext)->value('id')) ? 'ring_group:'.$group : null)),
         ))->decide($to);
 
         if ($decision->type === DialDecision::CLIENT && ! User::query()->whereKey((int) substr((string) $decision->target, 5))->exists()) {
@@ -467,6 +571,21 @@ class VoiceController extends Controller
             VoiceUrl::to('webhooks.voice.after-dial', ['next' => (string) Destination::hangup()]),
             $caller ? $this->limits->maxSeconds($caller) : null,
         );
+    }
+
+    /** A phone dialled *0: an admin records a sound for greetings, menus or hold music. */
+    private function recordSound(User $caller): CallScript
+    {
+        if (! $caller->isAdmin()) {
+            return (new CallScript())->say(self::MSG_SOUND_ADMINS_ONLY)->hangup();
+        }
+
+        return (new CallScript())
+            ->say(self::MSG_RECORD_SOUND)
+            ->record([
+                'maxLength' => SoundController::MAX_SECONDS,
+                'action' => VoiceUrl::to('webhooks.voice.sound-recorded', []),
+            ]);
     }
 
     /** A phone dialled ** and a slot: it is connected to the call waiting there. */

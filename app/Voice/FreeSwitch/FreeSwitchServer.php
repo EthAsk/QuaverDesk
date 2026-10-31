@@ -153,6 +153,18 @@ class FreeSwitchServer implements VoiceServer
         }
     }
 
+    public function resyncPhone(string $sipUsername): void
+    {
+        if (! preg_match('/^[A-Za-z0-9_-]{1,64}$/', $sipUsername) || ! $this->domain()) {
+            throw new RuntimeException('Not a phone on this voice server.');
+        }
+
+        $reply = $this->api(fn (EventSocket $esl) => $esl->api("sofia profile internal check_sync {$sipUsername}@{$this->domain()}"));
+        if (str_starts_with(trim($reply), '-ERR')) {
+            throw new RuntimeException('The voice server could not reach the phone.');
+        }
+    }
+
     /** @param callable(EventSocket): string $command */
     private function api(callable $command): string
     {

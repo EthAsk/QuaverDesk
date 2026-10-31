@@ -2,22 +2,12 @@
 
 namespace App\Http\Controllers;
 
-use App\Domain\Telephony\DialDecision;
-use App\Domain\Telephony\Dialplan;
-use App\Models\Call;
-use App\Models\SipTrunk;
 use App\Models\User;
-use App\Support\CallerId;
-use App\Support\CallLimits;
-use App\Voice\VoiceServer;
-use App\Voice\VoiceUrl;
+use App\Support\MobileConfirmation;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
-use RuntimeException;
 
 /**
  * Follow-me: a person's calls also ring their own mobile. The mobile
@@ -36,8 +26,8 @@ class FollowMeController extends Controller
 
         $mobile = null;
         if (filled($data['mobile'] ?? null)) {
-            $mobile = Dialplan::normaliseUk(preg_replace('/[\s().-]/', '', $data['mobile']) ?? '');
-            if ($mobile === null || ! str_starts_with($mobile, '+447')) {
+            $mobile = MobileConfirmation::normalise($data['mobile']);
+            if ($mobile === null) {
                 throw ValidationException::withMessages(['mobile' => 'Enter a UK mobile number, such as 07700 900123.']);
             }
         }
@@ -57,42 +47,16 @@ class FollowMeController extends Controller
         });
     }
 
-    /** Calls the person's mobile; pressing 1 proves it is theirs. It's an outside call like any other. */
-    public function verify(Request $request, CallLimits $limits, VoiceServer $voice): RedirectResponse
+    /** Calls the person's mobile; pressing 1 proves it is theirs. */
+    public function verify(Request $request, MobileConfirmation $confirmation): RedirectResponse
     {
         $user = $request->user();
         if ($user->mobile === null || $user->mobile_verified_at !== null) {
             return back();
         }
 
-        $trunk = SipTrunk::defaultOutbound();
-        $callerId = CallerId::default();
-        $problem = match (true) {
-            $trunk === null || $callerId === null => 'This phone system has no phone line for outside calls yet. Ask your administrator.',
-            default => $limits->refusal($user, DialDecision::number($user->mobile))?->message,
-        };
-        if ($problem !== null) {
+        if ($problem = $confirmation->call($user)) {
             throw ValidationException::withMessages(['mobile' => $problem]);
-        }
-
-        $call = Call::query()->create([
-            'carrier_sid' => (string) Str::uuid(),
-            'user_id' => $user->id,
-            'sip_trunk_id' => $trunk->id,
-            'direction' => 'outbound',
-            'from' => $callerId,
-            'to' => $user->mobile,
-            'decision' => DialDecision::NUMBER,
-            'status' => 'initiated',
-        ]);
-
-        try {
-            $voice->callNumber($user->mobile, $trunk->gatewayNames()[0], $callerId, $call->carrier_sid, VoiceUrl::to('webhooks.voice.confirm-mobile', []));
-        } catch (RuntimeException $e) {
-            Log::error('Could not call a mobile to confirm it.', ['error' => $e->getMessage()]);
-            $call->forceFill(['status' => 'failed', 'duration_seconds' => 0])->save();
-
-            throw ValidationException::withMessages(['mobile' => 'We couldn\'t call your mobile just now. Please try again later.']);
         }
 
         return back()->with('status', 'Calling your mobile now. Answer it and press 1.');

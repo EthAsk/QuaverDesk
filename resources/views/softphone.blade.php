@@ -48,6 +48,9 @@
                 or <em>Talk first</em> to speak to them before handing over. <strong>Park</strong> puts the caller on hold
                 in a numbered space; any phone here picks it up by dialling <code>**</code> and the number, such as <code>**3</code>.
                 A parked call nobody picks up rings you again after 3 minutes.</p>
+            <h2 style="margin-top:24px">Voicemail</h2>
+            <p class="small">Dial <code>*00</code> to play your messages: press 1 to hear one again, 2 for the next, 7 to delete it.
+                You can record your own box's greeting there too.</p>
             <p class="small muted">Not for emergency calls. In an emergency, use a mobile or landline to dial 999.
                 A 999 call can't be transferred or parked.</p>
         </div>

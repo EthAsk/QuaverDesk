@@ -24,6 +24,22 @@ class DialplanTest extends TestCase
         $this->assertSame('user-12', $decision->target);
     }
 
+    public function test_a_busy_lamp_key_calls_the_colleague_it_watches(): void
+    {
+        $key = 'blf-'.str_repeat('a1', 10);
+        $plan = new Dialplan(extensions: fn (string $to) => $to === $key ? 'user-7' : null);
+
+        $this->assertEquals(DialDecision::client('user-7'), $plan->decide($key));
+        $this->assertSame(DialDecision::REJECT, $plan->decide('blf-'.str_repeat('b2', 10))->type);
+        $this->assertSame(DialDecision::REJECT, (new Dialplan())->decide($key)->type);
+    }
+
+    public function test_star_zero_records_a_sound(): void
+    {
+        $this->assertSame(DialDecision::RECORD_SOUND, (new Dialplan())->decide('*0')->type);
+        $this->assertSame(DialDecision::CLIENT, (new Dialplan())->decide('*01')->type);
+    }
+
     public function test_emergency_numbers_are_dialled(): void
     {
         $plan = new Dialplan();

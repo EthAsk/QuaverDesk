@@ -3,6 +3,7 @@
 use App\Http\Middleware\EnsureAcknowledged;
 use App\Http\Middleware\EnsureFeature;
 use App\Http\Middleware\EnsureHosted;
+use App\Http\Middleware\EnsureCanSignIn;
 use App\Http\Middleware\EnsurePasskeysLicensed;
 use App\Http\Middleware\EnsureRole;
 use App\Http\Middleware\EnsureWithinPlan;
@@ -29,8 +30,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // Which company a request is for, before routing, so before any
         // controller, session or sign-in is touched.
         $middleware->prepend([IdentifyTenant::class, IdentifyCallTenant::class]);
-        $middleware->web(append: [EnsurePasskeysLicensed::class, SupportVisit::class]);
+        $middleware->web(append: [EnsurePasskeysLicensed::class, SupportVisit::class, EnsureCanSignIn::class]);
         $middleware->redirectGuestsTo(fn (Request $request) => $request->is('operator', 'operator/*') ? route('operator.login') : route('login'));
+        // Someone already signed in who opens a sign-in page goes to their own home, on whichever address they are.
+        $middleware->redirectUsersTo(fn (Request $request) => $request->is('operator', 'operator/*') ? route('operator.home') : '/dashboard');
 
         // Trusted proxies are applied in AppServiceProvider from config, so they
         // still work after `php artisan config:cache` (env() is empty then).
@@ -40,7 +43,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->validateCsrfTokens(except: ['webhooks/*']);
 
         // Keep answering calls while `php artisan down` is on during a deploy.
-        $middleware->preventRequestsDuringMaintenance(except: ['webhooks/voice/*', 'voice/prompts/*', 'voice/sounds/*']);
+        $middleware->preventRequestsDuringMaintenance(except: ['webhooks/voice/*', 'voice/prompts/*', 'voice/sounds/*', 'voice/messages/*']);
 
         $middleware->alias([
             'role' => EnsureRole::class,

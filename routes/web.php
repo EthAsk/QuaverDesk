@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AiSettingsController;
+use App\Http\Controllers\Admin\CallLogController as AdminCallLogController;
 use App\Http\Controllers\Admin\CallingRulesController;
 use App\Http\Controllers\Admin\DeskPhoneController;
 use App\Http\Controllers\Admin\IvrMenuController;
@@ -30,6 +31,9 @@ use App\Http\Controllers\SoftphoneController;
 use App\Http\Controllers\SoundFileController;
 use App\Http\Controllers\SupportVisitController;
 use App\Http\Controllers\Webhooks\VoiceController;
+use App\Http\Controllers\Webhooks\VoicemailMenuController;
+use App\Http\Controllers\ProvisioningController;
+use App\Http\Controllers\VoicemailAudioController;
 use Illuminate\Support\Facades\Route;
 
 // Signed-in people land on the dashboard.
@@ -77,6 +81,9 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
             Route::post('/users', [UserController::class, 'store'])->name('users.store');
             Route::patch('/users/{user}', [UserController::class, 'update'])->name('users.update');
             Route::patch('/users/{user}/extension', [UserController::class, 'extension'])->name('users.extension');
+            Route::patch('/users/{user}/mobile', [UserController::class, 'mobile'])->name('users.mobile');
+            Route::patch('/users/{user}/type', [UserController::class, 'type'])->name('users.type');
+            Route::post('/users/{user}/confirm-mobile', [UserController::class, 'confirmMobile'])->middleware('throttle:5,1')->name('users.confirm-mobile');
             Route::delete('/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
             Route::post('/users/{user}/invite', [UserController::class, 'invite'])->middleware('throttle:10,1')->name('users.invite');
 
@@ -137,6 +144,13 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
                 Route::get('/desk-phones', [DeskPhoneController::class, 'index'])->name('desk-phones');
                 Route::post('/desk-phones', [DeskPhoneController::class, 'store'])->name('desk-phones.store');
                 Route::post('/desk-phones/{phone}/reveal', [DeskPhoneController::class, 'reveal'])->name('desk-phones.reveal');
+                Route::patch('/desk-phones/{phone}/lock', [DeskPhoneController::class, 'lock'])->name('desk-phones.lock');
+                Route::patch('/desk-phones/{phone}/provisioning', [DeskPhoneController::class, 'provisioning'])->name('desk-phones.provisioning');
+                Route::put('/desk-phones/{phone}/keys', [DeskPhoneController::class, 'keys'])->name('desk-phones.keys');
+                Route::post('/desk-phones/{phone}/admin-password', [DeskPhoneController::class, 'adminPassword'])->name('desk-phones.admin-password');
+                Route::post('/desk-phones/{phone}/admin-password/new', [DeskPhoneController::class, 'newAdminPassword'])->name('desk-phones.admin-password.new');
+                Route::post('/desk-phones/{phone}/send-settings', [DeskPhoneController::class, 'sendSettings'])->middleware('throttle:10,1')->name('desk-phones.send-settings');
+                Route::post('/desk-phones/provisioning-login', [DeskPhoneController::class, 'newLogin'])->name('desk-phones.provisioning-login');
                 Route::delete('/desk-phones/{phone}', [DeskPhoneController::class, 'destroy'])->name('desk-phones.destroy');
             });
 
@@ -151,6 +165,8 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
                 Route::post('/ai/test', [AiSettingsController::class, 'test'])->middleware('throttle:5,1')->name('ai.test');
                 Route::delete('/ai/key', [AiSettingsController::class, 'forget'])->name('ai.forget');
             });
+
+            Route::get('/call-logs', AdminCallLogController::class)->name('call-logs');
 
             Route::middleware('password.confirm')->group(function () {
                 Route::get('/calling-rules', [CallingRulesController::class, 'show'])->name('calling-rules');
@@ -171,6 +187,12 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
 Route::get('/voice/prompts/{hash}.wav', PromptController::class)->where('hash', '[0-9a-f]{40}')->name('voice.prompt');
 // Uploaded greetings and hold music, under unguessable names.
 Route::get('/voice/sounds/{file}.wav', SoundFileController::class)->where('file', '[0-9a-f]{40}')->name('voice.sound');
+// Desk phones download their settings (ProvisioningController). The company comes from the address.
+Route::get('/provision/{token}/{file}', ProvisioningController::class)->where(['token' => '[0-9a-f]{32}', 'file' => '[A-Za-z0-9._-]{1,64}'])
+    ->middleware('throttle:provisioning')->name('provision');
+// A voicemail played under *00: signed, short-lived names (VoicemailAudio).
+Route::get('/voice/messages/{file}.wav', VoicemailAudioController::class)->where('file', '[0-9]+-[0-9]+-[0-9a-f]{40}')
+    ->middleware('throttle:voice-webhooks')->name('voice.message');
 
 // Voice server → app. No session, no CSRF; every request must carry the shared secret.
 // On the hosted service, the company comes from the call itself (IdentifyCallTenant).
@@ -184,6 +206,9 @@ Route::prefix('webhooks/voice')->name('webhooks.voice.')->middleware(['carrier.s
     Route::post('/ivr-choice', [VoiceController::class, 'ivrChoice'])->name('ivr-choice');
     Route::post('/voicemail-saved', [VoiceController::class, 'voicemailSaved'])->name('voicemail-saved');
     Route::post('/recording-saved', [VoiceController::class, 'recordingSaved'])->name('recording-saved');
+    Route::post('/sound-recorded', [VoiceController::class, 'soundRecorded'])->name('sound-recorded');
+    Route::post('/voicemail-menu', [VoicemailMenuController::class, 'menu'])->name('voicemail-menu');
+    Route::post('/greeting-recorded', [VoicemailMenuController::class, 'greetingRecorded'])->name('greeting-recorded');
 });
 
 // --- Hosted service only (QUAVERDESK_MULTI_TENANT) --------------------------

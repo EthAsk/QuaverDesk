@@ -16,9 +16,15 @@
       <condition field="${sip_req_user}" expression="^gw\+(qd-t[0-9]{1,9}-[0-9]{1,3}-[a-f0-9]{12})$" break="never">
         <action application="set" data="qd_gateway=$1"/>
       </condition>
+      <!-- A call to a trunk's own hosted address (<name>.<base domain>, the name ending in a secret). -->
+      <condition field="${sip_req_host}" expression="(?i)^(qd-t[0-9]{1,9}-[a-f0-9]{12})\." break="never">
+        <action application="set" data="qd_trunk=$1"/>
+      </condition>
       <condition field="destination_number" expression="^.{1,64}$">
         <action application="set" data="RECORD_STEREO=true"/>
         <action application="set" data="record_sample_rate=8000"/>
+        <!-- Accept encrypted audio when the provider offers it (secure trunks need it; see srtp). -->
+        <action application="set" data="rtp_secure_media=optional:AES_CM_128_HMAC_SHA1_80:AES_CM_128_HMAC_SHA1_32"/>
         <action application="set" data="playback_terminators=#"/>
         <action application="set" data="ringback=$${uk-ring}"/>
         <action application="set" data="transfer_ringback=$${uk-ring}"/>
@@ -30,8 +36,9 @@
         <action application="export" data="nolocal:force_transfer_context=qd-transfer"/>
         <action application="export" data="nolocal:qd_call=${uuid}"/>
         <action application="answer"/>
-        <!-- source: the address the call really came from (from the network, not the SIP message). -->
-        <action application="httapi" data="{httapi_profile=quaverdesk,url=$${qd_app_url}/webhooks/voice/inbound,to_user=${qd_to_user},gateway=${qd_gateway},source=${network_addr}}"/>
+        <!-- source: the address the call really came from (from the network, not the SIP message).
+             srtp: the encryption the audio was answered with (set by FreeSWITCH, empty when none). -->
+        <action application="httapi" data="{httapi_profile=quaverdesk,url=$${qd_app_url}/webhooks/voice/inbound,to_user=${qd_to_user},gateway=${qd_gateway},trunk=${qd_trunk},srtp=${rtp_has_crypto},source=${network_addr}}"/>
       </condition>
     </extension>
   </context>
@@ -43,7 +50,11 @@
       <condition field="destination_number" expression="^[0-9a-z*#+-]{1,40}$">
         <action application="set" data="RECORD_STEREO=true"/>
         <action application="set" data="record_sample_rate=8000"/>
+        <!-- # ends a recording (*0 records a sound). -->
+        <action application="set" data="playback_terminators=#"/>
         <action application="set" data="ringback=$${uk-ring}"/>
+        <!-- Ringing for a call already answered here, e.g. one connected straight to another company's number. -->
+        <action application="set" data="transfer_ringback=$${uk-ring}"/>
         <action application="set" data="hangup_after_bridge=false"/>
         <action application="set" data="continue_on_fail=true"/>
         <!-- Transfers and parks go to qd-transfer. Whoever this phone calls learns who is calling (qd_by). -->

@@ -90,7 +90,7 @@ class AppServiceProvider extends ServiceProvider
         $sync = fn () => SyncVoiceServer::dispatch()->afterCommit();
         User::created($sync);
         User::deleted($sync);
-        User::updated(fn (User $u) => $u->wasChanged(['name', 'extension']) && $sync());
+        User::updated(fn (User $u) => $u->wasChanged(['name', 'extension', 'forward_only']) && $sync());
         DeskPhone::saved($sync);
         DeskPhone::deleted($sync);
         SipTrunk::saved($sync);
@@ -142,6 +142,8 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('voice-webhooks', fn () => ($id = app(Tenancy::class)->id()) && app(Tenancy::class)->enabled()
             ? Limit::perMinute((int) config('tenancy.webhooks_per_minute'))->by('voice:tenant:'.$id)
             : Limit::none());
+        // Phones fetch a few files when they start; this stops anyone guessing MAC addresses.
+        RateLimiter::for('provisioning', fn (Request $request) => Limit::perMinute(30)->by('provision:'.$request->ip()));
         RateLimiter::for('ai', fn (Request $request) => [
             Limit::perMinute(20)->by('ai:user:'.$request->user()?->id),
             Limit::perHour((int) config('tenancy.ai_per_hour'))->by('ai:tenant:'.app(Tenancy::class)->id()),

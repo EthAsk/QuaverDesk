@@ -66,7 +66,7 @@ class RingGroupController extends Controller
 
         return view('admin.ring-groups.form', [
             'group' => $group,
-            'users' => User::query()->orderBy('name')->get(),
+            'users' => User::query()->seated()->orderBy('name')->get(),
             'positions' => $group->exists ? $group->members->pluck('pivot.position', 'id')->all() : [],
             'options' => $options,
         ]);
@@ -84,7 +84,7 @@ class RingGroupController extends Controller
             'ring_seconds' => ['required', 'integer', 'min:5', 'max:120'],
             'fallback' => ['nullable', new ValidDestination()],
             'members' => ['nullable', 'array'],
-            'members.*' => ['integer', TenantRule::exists('users')],
+            'members.*' => ['integer', TenantRule::exists('users')->where('forward_only', 0)],
             'positions' => ['nullable', 'array'],
             'positions.*' => ['nullable', 'integer', 'min:0', 'max:999'],
         ], [

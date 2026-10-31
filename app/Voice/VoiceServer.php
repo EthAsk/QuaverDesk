@@ -51,4 +51,11 @@ interface VoiceServer
      * @throws \RuntimeException when the voice server can't place the call
      */
     public function callNumber(string $e164, string $trunk, string $callerId, string $callId, string $url): void;
+
+    /**
+     * Tell a registered desk phone to download its settings now (SIP NOTIFY check-sync).
+     *
+     * @throws \RuntimeException when the voice server can't be asked
+     */
+    public function resyncPhone(string $sipUsername): void;
 }

@@ -35,6 +35,7 @@
             <a href="{{ route('admin.desk-phones') }}" @class(['on' => request()->routeIs('admin.desk-phones*')])>Phones and apps @unlessfeature('desk_phones')<span class="lock">Plus</span>@endfeature</a>
             <a href="{{ route('admin.trunks') }}" @class(['on' => request()->routeIs('admin.trunks*')])>SIP trunks</a>
             <a href="{{ route('admin.calling-rules') }}" @class(['on' => request()->routeIs('admin.calling-rules')])>Calling rules</a>
+            <a href="{{ route('admin.call-logs') }}" @class(['on' => request()->routeIs('admin.call-logs')])>Call logs</a>
             @if (auth()->user()->isOwner())
                 <a href="{{ route('admin.licence') }}" @class(['on' => request()->routeIs('admin.licence')])>{{ config('tenancy.enabled') ? 'Plan' : 'Licence' }}</a>
             @endif

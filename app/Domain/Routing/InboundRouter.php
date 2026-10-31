@@ -108,11 +108,13 @@ final class InboundRouter
     private function toUser(Destination $to, RoutingContext $ctx): CallScript
     {
         $targets = $this->directory->userTargets($to->id);
+        $mailbox = $this->directory->userMailbox($to->id);
+
+        // Nothing to ring (a forward-only contact with no mobile): straight to their voicemail.
         if ($targets === []) {
-            return $this->unavailable();
+            return $mailbox ? $this->route(new Destination(Destination::VOICEMAIL, $mailbox), $ctx) : $this->unavailable();
         }
 
-        $mailbox = $this->directory->userMailbox($to->id);
         $next = $mailbox ? new Destination(Destination::VOICEMAIL, $mailbox) : Destination::hangup();
 
         return (new CallScript())->dial($targets, $this->dialOptions($ctx, [

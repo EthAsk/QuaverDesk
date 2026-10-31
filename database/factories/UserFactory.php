@@ -40,6 +40,17 @@ class UserFactory extends Factory
         return $this->afterMaking(fn (User $user) => $user->role = User::ROLE_ADMIN);
     }
 
+    /** A forward-only contact: calls go to their mobile or voicemail. */
+    public function forwardOnly(?string $mobile = null): static
+    {
+        return $this->afterMaking(function (User $user) use ($mobile) {
+            $user->forward_only = true;
+            if ($mobile !== null) {
+                $user->forceFill(['mobile' => $mobile, 'mobile_verified_at' => now(), 'follow_me' => User::FOLLOW_ME_TOGETHER]);
+            }
+        });
+    }
+
     /** Marks two-factor as set up so admin pages are reachable in tests. */
     public function withTwoFactor(): static
     {

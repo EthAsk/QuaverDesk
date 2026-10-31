@@ -38,6 +38,7 @@
 
             <button class="btn" type="submit" style="margin-top:14px" data-sound-save>Add sound</button>
         </form>
+        <p class="small muted" style="margin-top:14px">Or record on your phone: dial <strong>*0</strong> from your softphone or desk phone, speak after the tone and press # when you've finished. It appears here as "Recorded on the phone" with the date, ready to rename. To change a voicemail box's greeting, dial <strong>*00</strong> instead: it's set as that box's greeting straight away.</p>
     </div>
 
     <div class="card">

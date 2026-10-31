@@ -6,11 +6,13 @@ use App\Models\Call;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
+/** Call history: the record of calls. Why calls were refused is in Admin → Call logs. */
 class CallLogController extends Controller
 {
     public function __invoke(Request $request): View
     {
-        $query = Call::query()->with('user:id,name')->latest();
+        // Calls refused before they reached anyone aren't part of the record.
+        $query = Call::query()->with('user:id,name')->where('status', '!=', Call::STATUS_REFUSED)->latest();
 
         // Users see their own calls; admins see everyone's.
         if (! $request->user()->isAdmin()) {

@@ -11,7 +11,7 @@ When you set up a new system, work through
 
 ```
  Browsers ──wss 7443──┐                         ┌── SIP trunk provider(s)
- Desk phones ─TLS 5061┤      FreeSWITCH         │   (5080, from their IPs only)
+ Desk phones ─TLS 5061┤      FreeSWITCH         │   (5080, or TLS 5081; from their IPs only)
                       └─► internal profile ◄────┴── external profile
                                │       ▲
             HTTP webhooks      │       │ event socket (127.0.0.1 only):
@@ -142,12 +142,14 @@ both.
 | 5061/tcp | anywhere (or your offices) | desk phones (TLS) |
 | 7443/tcp | anywhere | browser softphones (wss) |
 | 5080/udp, 5080/tcp | **your trunk provider's IPs only** | calls to and from phone numbers |
+| 5081/tcp | **your trunk provider's IPs only** | secure trunks (TLS, encrypted audio) |
 | 16384–32768/udp | anywhere | call audio (RTP) |
 
 ```bash
 sudo ufw allow 5061/tcp
 sudo ufw allow 7443/tcp
 sudo ufw allow from 203.0.113.10 to any port 5080   # repeat per provider IP
+sudo ufw allow from 203.0.113.10 to any port 5081 proto tcp   # secure trunks
 sudo ufw allow 16384:32768/udp
 ```
 
@@ -251,6 +253,36 @@ fs_cli -P 8021 -p "$VOICE_ESL_PASSWORD"     # FreeSWITCH console
 | Every call is silent then drops; app log shows 403 on `/webhooks/voice/*` | `VOICE_WEBHOOK_SECRET` changed: run `php artisan voice:sync`. |
 | Trunk calls rejected | The provider's IPs are on the trunk page, and the firewall allows them on 5080. |
 | Changes to people or trunks don't take effect | Queue worker running; `php artisan voice:sync` shows any error. |
+
+## Busy lamp keys
+
+Desk phones' busy lamp (BLF) keys use FreeSWITCH presence. The config in
+`deploy/freeswitch/conf` turns it on:
+
+- In `sip_profiles/internal.xml`, `manage-presence`, `presence-hosts` and
+  `auth-subscriptions` are set: only signed-in phones may subscribe.
+- In `directory/domain.xml`, the dial-string labels a ringing call with the
+  person's secret busy lamp address (each user's `presence_id` variable,
+  written by the app).
+
+**Upgrading an existing server.** A server installed before busy lamp keys
+needs both files copied in, then a reload. Restarting the internal profile
+drops calls on desk phones and softphones, so do it when the phones are quiet:
+
+```bash
+sudo cp /etc/freeswitch/sip_profiles/internal.xml /etc/freeswitch/sip_profiles/internal.xml.bak
+sudo cp /etc/freeswitch/directory/domain.xml /etc/freeswitch/directory/domain.xml.bak
+sudo cp /srv/quaverdesk/deploy/freeswitch/conf/sip_profiles/internal.xml /etc/freeswitch/sip_profiles/
+sudo cp /srv/quaverdesk/deploy/freeswitch/conf/directory/domain.xml /etc/freeswitch/directory/
+sudo -u quaverdesk php artisan voice:sync     # writes everyone's presence_id
+fs_cli -P 8021 -p "$VOICE_ESL_PASSWORD" -x 'reloadxml'
+fs_cli -P 8021 -p "$VOICE_ESL_PASSWORD" -x 'sofia profile internal restart'
+```
+
+To check it, run `sofia status profile internal` and look for
+`PRES-HOSTS` set to `VOICE_DOMAIN`. During a call, `show channels` should list
+the caller's `presence_id` as `blf-…@VOICE_DOMAIN`, never `user-…`. Setting
+the keys up on phones is in [DESK-PHONES.md](DESK-PHONES.md).
 
 ## Placing a test call
 

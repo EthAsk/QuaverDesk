@@ -82,6 +82,10 @@ class TenantIsolationTest extends TestCase
         });
         // The operator console's company pages don't exist on a company's address.
         $this->bolts['tenant'] = $this->bolt->id;
+        // Licences live on the licence server, not in any company (operator console only, where it exists).
+        $this->bolts['licence'] = 1;
+        $this->bolts['reseller'] = 1;
+        $this->bolts['action'] = 'update';
         $this->tenancy->set(null);
     }
 

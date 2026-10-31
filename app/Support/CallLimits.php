@@ -40,6 +40,12 @@ final class CallLimits
     {
     }
 
+    /** The longest a single outside call may last, in minutes (the company's setting). */
+    public static function maxCallMinutes(): int
+    {
+        return (int) ((array) Setting::get('calling.limits', []) + self::DEFAULTS)['max_call_minutes'];
+    }
+
     /** @return array{calls_per_day: int, minutes_per_day: int, max_call_minutes: int, concurrent: int} */
     public function settings(): array
     {
@@ -142,8 +148,9 @@ final class CallLimits
     private function seconds($query): int
     {
         // Calls still going count for the time so far.
-        return (int) $query->get(['duration_seconds', 'created_at'])
-            ->sum(fn (Call $c) => $c->duration_seconds ?? (int) $c->created_at->diffInSeconds(now(), true));
+        $max = $this->settings()['max_call_minutes'];
+
+        return (int) $query->get(['duration_seconds', 'created_at'])->sum(fn (Call $c) => $c->countedSeconds($max));
     }
 
     /**

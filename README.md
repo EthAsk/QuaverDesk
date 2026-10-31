@@ -97,6 +97,11 @@ required, so a passkey counts as both factors). Passkeys only work at the
 - **Admin → Voicemail boxes:** choose who gets each box's emails and whose
   missed calls go there. A box can also be a destination for a number, ring
   group fallback or IVR option.
+- **Dial `*00`** from a softphone or desk phone to play your voicemail: replay,
+  skip or delete each message. You can record the greeting of your own box
+  (one where you're the only member); admins can record any box's greeting
+  this way. Boxes set to delete messages once they're emailed have none to
+  play.
 - **Admin → Recording (Plus/Pro):** the notice callers hear, outgoing-call
   recording, retention (90 days on Plus, your choice on Pro) and automatic AI.
   Switch recording on per number under Phone numbers.
@@ -139,6 +144,39 @@ phone, dial `*12` to call colleague user-12, or any UK number as normal.
 Use the handset's own Transfer and Hold keys. To park a call, transfer it to
 `**1` to `**9`; any phone picks it up by dialling the same code.
 
+A phone can be locked to where it signs in from: up to 5 IP addresses,
+ranges or host names (for example the office's public IP, or its dynamic DNS
+name, which is looked up again every 5 minutes; if a lookup fails the last
+address is kept). From anywhere else the voice
+server refuses it, even with the right password, for registering and calling
+alike. The voice server must see phones' real addresses, so forward port 5061
+to it directly rather than through a proxy.
+
+A locked phone may also sign in from local network addresses (10.x, 172.16–31.x,
+192.168.x and IPv6 fc00::/7), unless its **Filter LAN addresses** box is ticked.
+Those addresses can only reach the server from its own network, so phones in the
+same building as the server work without listing them. This relies on the
+server seeing phones' real addresses: if a router or proxy in front of it
+replaces internet callers' addresses with a local one, tick the box.
+
+**Automatic set-up (Yealink, Grandstream GRP, Fanvil X series).** Give a phone
+its make and MAC address, then enter the company's provisioning address, user
+name and password on the phone once (or set DHCP option 66). The phone fetches
+its SIP account (TLS, compulsory SRTP), a new random admin password for its
+web page, UK time, `*00` for voicemail and its busy lamp keys, and checks again every day.
+**Send settings now** asks a signed-in phone to fetch at once (SIP NOTIFY
+check-sync). Admin passwords are shown only after confirming your password.
+Every download, refusal (wrong login, unknown MAC, outside the phone's lock)
+and every time someone shows or changes a password is kept in the **phone log**,
+which the operator also sees on the company's page.
+
+**Busy lamp keys (BLF).** Choose colleagues for a phone, and it gets a key for
+each one. The key lights while they're on a call and flashes while their phone
+rings; press it to call them, or to transfer a call to them. Each person's
+lamp is watched through a secret address that only phones in their own company
+are given. The whole process, including DHCP option 66 and troubleshooting, is
+in [docs/DESK-PHONES.md](docs/DESK-PHONES.md).
+
 **Recommended mobile apps.** The app must support TLS and SRTP. An iPhone only
 rings for an app that is closed if the app's maker wakes it with a push
 notification, which this phone system can't do itself.
@@ -175,6 +213,26 @@ mobiles are outside calls: they show the company's number and count towards the
 person's fraud limits; when a limit is reached, only their phones ring. Calls to
 ring groups don't ring members' mobiles.
 
+### Forward-only contacts
+
+**Admin → Users → Add a forward-only contact** is for people who don't use the
+phone system day to day. They get an extension but no sign-in, softphone or
+desk phone, so there's no account to secure. Calls to them ring their mobile
+(once they've confirmed it by pressing 1); with no mobile, or no answer, the
+caller leaves a voicemail that's emailed to them with the audio attached.
+Forward-only contacts are free on every plan and don't count towards its
+users.
+
+**Make forward-only** on an existing user signs them out everywhere and removes
+their desk phones, passkeys, two-factor and ring group places; **Give a
+sign-in** turns a contact back into a user (it takes one of the plan's users)
+and emails them a link to set a password.
+
+Removing anyone also deletes any voicemail box that no longer reaches anyone
+(no members and no extra email addresses), with its messages and a greeting
+recorded on the phone, so a departed person's voicemail isn't kept. Shared
+boxes stay.
+
 ## Licensing
 
 QuaverDesk runs on the Free plan with no key. For Plus or Pro, buy a licence
@@ -207,3 +265,4 @@ renewal.
 - [SECURITY.md](SECURITY.md) · [TRADEMARKS.md](TRADEMARKS.md) · [CONTRIBUTING.md](CONTRIBUTING.md) · [NOTICE](NOTICE)
 - [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — setting up a production server
 - [docs/VOICE-SERVER.md](docs/VOICE-SERVER.md) — installing and running FreeSWITCH
+- [docs/DESK-PHONES.md](docs/DESK-PHONES.md) — setting up desk phones automatically, and busy lamp keys

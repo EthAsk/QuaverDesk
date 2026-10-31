@@ -69,6 +69,7 @@ class SipTrunkController extends Controller
             'auth_username' => ['nullable', 'string', 'max:100', 'regex:/^[^\s$]+$/'],
             'auth_password' => ['nullable', ...($keepPassword ? [] : ['required_with:auth_username']), 'string', 'max:200', 'regex:/^[^\s$]+$/'],
             'register' => ['nullable', 'boolean'],
+            'secure' => ['nullable', 'boolean'],
         ], [
             'auth_username.regex' => 'The username cannot contain spaces or "$".',
             'auth_password.regex' => 'The password cannot contain spaces or "$".',
@@ -84,6 +85,7 @@ class SipTrunkController extends Controller
             'auth_username' => $username,
             'auth_password' => $username === null ? null : (($data['auth_password'] ?? null) ?: $trunk?->auth_password),
             'register' => $request->boolean('register') && $username !== null,
+            'secure' => $request->boolean('secure') && config('voip.freeswitch.tls'),
         ];
     }
 
@@ -92,7 +94,7 @@ class SipTrunkController extends Controller
         return view('admin.trunks.show', [
             'trunk' => $trunk->loadCount('numbers'),
             'provider' => config('sip_providers.'.$trunk->provider.'.name', $trunk->provider),
-            'address' => config('voip.freeswitch.trunk_address'),
+            'address' => $trunk->inboundAddress(),
         ]);
     }
 

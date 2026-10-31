@@ -59,6 +59,27 @@ class PhoneAppTest extends TestCase
             ->assertDontSee('data-dial="999"', false);
     }
 
+    public function test_call_history_is_the_record_and_call_logs_say_what_went_wrong(): void
+    {
+        $admin = User::factory()->owner()->withTwoFactor()->create();
+        $user = User::factory()->create();
+        Call::create(['carrier_sid' => self::callId(3), 'user_id' => $admin->id, 'direction' => 'inbound', 'from' => '+447700900123', 'to' => '+442079460000', 'status' => 'completed']);
+        Call::create(['carrier_sid' => self::callId(4), 'direction' => 'inbound', 'from' => '+447700900999', 'to' => '+442079460000', 'status' => 'rejected', 'reason' => 'Refused: no phone number here matches the number called.']);
+        Call::create(['carrier_sid' => self::callId(5), 'direction' => 'inbound', 'from' => '+447700900888', 'to' => '+442079460000', 'status' => Call::STATUS_REFUSED, 'reason' => 'Refused: wrong trunk address.', 'duration_seconds' => 0]);
+
+        // Call history: the record, without calls refused before they reached anyone, and without diagnostics.
+        $this->actingAs($admin)->get('/calls')->assertOk()->assertSee('Call history')->assertSee('+447700900123')
+            ->assertDontSee('+447700900888')->assertDontSee('no phone number here matches');
+
+        // Call logs (admins): every call and why.
+        $this->actingAs($admin)->get('/admin/call-logs')->assertOk()->assertSee('+447700900888')->assertSee('Refused: wrong trunk address.')->assertSee('no phone number here matches');
+        $this->actingAs($admin)->get('/admin/call-logs?problems=1')->assertDontSee('+447700900123')->assertSee('+447700900999');
+
+        // Everyone else: only their own history, and no call logs.
+        $this->actingAs($user)->get('/calls')->assertOk()->assertDontSee('+447700900999');
+        $this->actingAs($user)->get('/admin/call-logs')->assertForbidden();
+    }
+
     public function test_phone_is_docked_on_app_pages_once_calling_is_on(): void
     {
         $owner = User::factory()->owner()->withTwoFactor()->create();

@@ -28,6 +28,14 @@ final class CallScript
     /** @var list<array> */
     private array $steps = [];
 
+    /** Answers the call, and ends it after $maxSeconds if given. */
+    public function answer(?int $maxSeconds = null): self
+    {
+        $this->steps[] = ['answer', $maxSeconds];
+
+        return $this;
+    }
+
     public function say(string $text): self
     {
         $this->steps[] = ['say', $text];

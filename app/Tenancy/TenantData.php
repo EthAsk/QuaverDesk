@@ -5,6 +5,7 @@ namespace App\Tenancy;
 use App\Models\Acknowledgement;
 use App\Models\Call;
 use App\Models\DeskPhone;
+use App\Models\DeskPhoneEvent;
 use App\Models\IvrMenu;
 use App\Models\Mailbox;
 use App\Models\PhoneNumber;
@@ -35,12 +36,12 @@ class TenantData
      * @var list<class-string<Model>>
      */
     private const MODELS = [
-        Recording::class, Call::class, Acknowledgement::class, DeskPhone::class, PhoneNumber::class,
+        DeskPhoneEvent::class, Recording::class, Call::class, Acknowledgement::class, DeskPhone::class, PhoneNumber::class,
         IvrMenu::class, RingGroup::class, Mailbox::class, Sound::class, SipTrunk::class, Setting::class, User::class,
     ];
 
     /** Never exported: passwords and keys that would let someone sign in or call as the company. */
-    private const SECRET_SETTINGS = ['licence_key'];
+    private const SECRET_SETTINGS = ['licence_key', 'provisioning'];
 
     public function __construct(
         private readonly Tenancy $tenancy,

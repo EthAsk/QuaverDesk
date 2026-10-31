@@ -31,7 +31,10 @@ class DatabaseRoutingDirectory implements RoutingDirectory
     ) {
     }
 
-    /** Their phones, and their mobile if they turned on follow-me (calls to them, not to their ring groups). */
+    /**
+     * Their phones, and their mobile if they turned on follow-me (calls to them,
+     * not to their ring groups). Forward-only contacts have no phones: just the mobile.
+     */
     public function userTargets(int $userId): array
     {
         $user = User::query()->with('deskPhones')->find($userId);
@@ -76,6 +79,10 @@ class DatabaseRoutingDirectory implements RoutingDirectory
     /** Softphone always; desk phones and mobile apps too on Plus once the desk phone service is set up. */
     private function targetsFor(User $user): array
     {
+        if ($user->isForwardOnly()) {
+            return [];
+        }
+
         $targets = [DialTarget::client($user->carrierIdentity())];
 
         if ($this->licences->allows(Feature::DeskPhones) && DeskPhone::service()) {

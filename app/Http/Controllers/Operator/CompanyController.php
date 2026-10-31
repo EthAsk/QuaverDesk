@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Jobs\SyncVoiceServer;
 use App\Mail\UserInvited;
 use App\Models\OperatorAudit;
+use App\Models\DeskPhoneEvent;
 use App\Models\SipTrunk;
 use App\Models\SupportSession;
 use App\Models\Tenant;
@@ -72,8 +73,11 @@ class CompanyController extends Controller
             ->with('invited', ['email' => strtolower($data['owner_email']), 'link' => $link]);
     }
 
-    public function show(Tenant $tenant): View
+    public function show(Request $request, Tenant $tenant): View
     {
+        // The support visit form posts here, which then redirects to the company's own address.
+        $request->attributes->set('csp.form-action', $tenant->url());
+
         return view('operator.companies.show', [
             'company' => $tenant,
             'usage' => $this->usage()[$tenant->id] ?? null,
@@ -81,6 +85,7 @@ class CompanyController extends Controller
             'quota' => $this->tenancy->run($tenant, fn () => ['storage' => app(Quotas::class)->storageBytes(), 'outside' => app(Quotas::class)->outsideSecondsThisMonth()]),
             'trunks' => $this->tenancy->run($tenant, fn () => SipTrunk::query()->orderBy('name')->get()),
             'people' => $this->tenancy->run($tenant, fn () => User::query()->orderByRaw("role = 'owner' desc")->orderBy('name')->get()),
+            'phoneLog' => $this->tenancy->run($tenant, fn () => DeskPhoneEvent::query()->with('user:id,name')->latest('id')->limit(30)->get()),
             'visits' => SupportSession::query()->with('operator')->where('tenant_id', $tenant->id)->latest()->limit(10)->get(),
             'audit' => OperatorAudit::query()->with('operator')->where('tenant_id', $tenant->id)->latest('id')->limit(20)->get(),
         ]);
@@ -152,7 +157,8 @@ class CompanyController extends Controller
         $to ??= now()->addSecond();
 
         $count = fn (string $table) => DB::table($table)->groupBy('tenant_id')->pluck(DB::raw('count(*)'), 'tenant_id');
-        $users = $count('users');
+        // Forward-only contacts are free, so they aren't users here either.
+        $users = DB::table('users')->where('forward_only', false)->groupBy('tenant_id')->pluck(DB::raw('count(*)'), 'tenant_id');
         $numbers = $count('phone_numbers');
         $recordings = DB::table('recordings')->where('status', 'stored')->groupBy('tenant_id')->pluck(DB::raw('count(*)'), 'tenant_id');
 

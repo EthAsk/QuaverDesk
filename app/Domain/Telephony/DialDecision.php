@@ -10,6 +10,8 @@ final class DialDecision
     public const REJECT = 'reject';
     public const RING_GROUP = 'ring_group';
     public const PARK = 'park'; // target: the slot, or null for "any free slot"
+    public const RECORD_SOUND = 'record_sound'; // *0: record a sound for greetings and menus
+    public const VOICEMAIL = 'voicemail'; // *00: play your messages, record your greeting
 
     private function __construct(
         public readonly string $type,
@@ -41,6 +43,16 @@ final class DialDecision
     public static function park(?int $slot): self
     {
         return new self(self::PARK, $slot === null ? null : (string) $slot);
+    }
+
+    public static function recordSound(): self
+    {
+        return new self(self::RECORD_SOUND);
+    }
+
+    public static function voicemail(): self
+    {
+        return new self(self::VOICEMAIL);
     }
 
     public static function reject(string $message): self

@@ -8,6 +8,7 @@ use App\Models\PhoneNumber;
 use App\Models\Recording;
 use App\Models\Sound;
 use App\Models\Tenant;
+use App\Support\CallLimits;
 use Carbon\CarbonImmutable;
 
 /**
@@ -58,8 +59,9 @@ class Quotas
                 ->orWhere(fn ($q) => $q->where('direction', 'outbound')->where('decision', DialDecision::NUMBER)))
             ->where('status', '!=', 'rejected')->where('created_at', '>=', self::startOfMonth())
             ->get(['duration_seconds', 'created_at']);
+        $max = CallLimits::maxCallMinutes();
 
-        return (int) $calls->sum(fn (Call $c) => $c->duration_seconds ?? (int) $c->created_at->diffInSeconds(now(), true));
+        return (int) $calls->sum(fn (Call $c) => $c->countedSeconds($max));
     }
 
     /** Seconds of outside calls left this month; null when there's no monthly allowance. */

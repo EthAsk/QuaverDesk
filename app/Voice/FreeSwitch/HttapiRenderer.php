@@ -46,6 +46,7 @@ final class HttapiRenderer
         $finished = false;
         foreach ($script->steps() as $step) {
             $finished = match ($step[0]) {
+                'answer' => $this->answer($doc, $work, $step[1]),
                 'say' => $this->say($doc, $work, $step[1]),
                 'play' => $this->play($doc, $work, $step[1]),
                 'dial' => $this->dial($doc, $work, $step[1], $step[2]),
@@ -66,6 +67,16 @@ final class HttapiRenderer
         }
 
         return $doc->saveXML();
+    }
+
+    private function answer(DOMDocument $doc, DOMElement $work, ?int $maxSeconds): bool
+    {
+        $work->appendChild($this->el($doc, 'execute', null, ['application' => 'answer']));
+        if ($maxSeconds !== null) {
+            $work->appendChild($this->el($doc, 'execute', null, ['application' => 'sched_hangup', 'data' => '+'.max(1, $maxSeconds).' ALLOTTED_TIMEOUT']));
+        }
+
+        return false;
     }
 
     private function say(DOMDocument $doc, DOMElement $work, string $text): bool

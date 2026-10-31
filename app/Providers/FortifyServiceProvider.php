@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Tenancy\Tenancy;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
@@ -21,6 +22,13 @@ class FortifyServiceProvider extends ServiceProvider
         Fortify::createUsersUsing(CreateNewUser::class);
         Fortify::resetUserPasswordsUsing(ResetUserPassword::class);
         Fortify::updateUserPasswordsUsing(UpdateUserPassword::class);
+
+        // Forward-only contacts have no sign-in (see EnsureCanSignIn).
+        Fortify::authenticateUsing(function (Request $request) {
+            $user = User::query()->where('email', Str::lower((string) $request->input(Fortify::username())))->first();
+
+            return $user && ! $user->isForwardOnly() && Hash::check((string) $request->input('password'), $user->password) ? $user : null;
+        });
 
         Fortify::loginView(fn () => view('auth.login', ['canRegister' => config('voip.web_setup') && ! config('tenancy.enabled') && ! User::query()->exists()]));
         Fortify::registerView(function () {

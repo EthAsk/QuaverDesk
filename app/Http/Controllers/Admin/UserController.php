@@ -11,6 +11,8 @@ use App\Support\Invites;
 use App\Licensing\Bands;
 use App\Support\LicenceManager;
 use App\Support\LicenceRenewal;
+use App\Support\MobileConfirmation;
+use App\Support\UserTypes;
 use App\Tenancy\TenantRule;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -18,6 +20,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use RuntimeException;
 
@@ -27,14 +30,19 @@ class UserController extends Controller
     {
         return view('admin.users', [
             'users' => User::query()->orderBy('name')->get(),
+            'seated' => User::query()->seated()->count(),
             'maxUsers' => $licences->current()->maxUsers(),
             'bandOffer' => Bands::upgradeOffer($licences->current()),
             'plan' => $licences->current()->plan,
         ]);
     }
 
-    public function store(Request $request, LicenceManager $licences, LicenceRenewal $renewal): RedirectResponse
+    public function store(Request $request, LicenceManager $licences, LicenceRenewal $renewal, MobileConfirmation $confirmation): RedirectResponse
     {
+        if ($request->input('role') === self::FORWARD_ONLY) {
+            return $this->storeForwardOnly($request, $confirmation);
+        }
+
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             // Unique across every company, not just this one: sign-in and password
@@ -48,7 +56,7 @@ class UserController extends Controller
 
         // Full, and the admin agreed to move up a band: pay for it first, then add the person.
         $offer = Bands::upgradeOffer($licences->current());
-        if ($offer && $request->boolean('upgrade') && User::query()->count() >= $max) {
+        if ($offer && $request->boolean('upgrade') && User::query()->seated()->count() >= $max) {
             try {
                 $max = $renewal->upgrade($offer['band'])->maxUsers();
             } catch (RuntimeException $e) {
@@ -57,7 +65,7 @@ class UserController extends Controller
         }
 
         $user = DB::transaction(function () use ($data, $max) {
-            if (User::query()->lockForUpdate()->count() >= $max) {
+            if (User::query()->seated()->lockForUpdate()->count() >= $max) {
                 return null;
             }
 
@@ -81,9 +89,134 @@ class UserController extends Controller
         return back()->with('invited', ['email' => $user->email, 'link' => $link]);
     }
 
+    private const FORWARD_ONLY = 'forward_only';
+
+    /**
+     * A forward-only contact: no sign-in or phones, and free. Calls ring their
+     * mobile once they confirm it (we call it now), otherwise go to their own
+     * voicemail box, which emails them the message.
+     */
+    private function storeForwardOnly(Request $request, MobileConfirmation $confirmation): RedirectResponse
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+            'mobile' => ['nullable', 'string', 'max:20'],
+            'extension' => ['nullable', ...self::extensionRules()],
+        ], self::EXTENSION_MESSAGES);
+        $mobile = $this->mobileFrom($data);
+
+        $user = DB::transaction(function () use ($data, $mobile) {
+            // Nobody knows this password, and it is never used: these accounts can't sign in.
+            $user = new User(['name' => $data['name'], 'email' => strtolower($data['email']), 'password' => Str::password(32)]);
+            $user->role = User::ROLE_USER;
+            $user->forward_only = true;
+            $user->extension = $data['extension'] ?? null;
+            $user->forceFill(['mobile' => $mobile, 'follow_me' => $mobile ? User::FOLLOW_ME_TOGETHER : User::FOLLOW_ME_OFF, 'follow_me_delay' => 0]);
+            $user->save();
+
+            // They can't sign in to play messages, so the audio comes with the email.
+            app(UserTypes::class)->ownMailbox($user);
+
+            return $user;
+        });
+
+        return back()->with('status', $this->confirming($user, $confirmation, "{$user->name} was added as a forward-only contact on extension {$user->extension}."));
+    }
+
+    /** A forward-only contact's mobile: changing it means confirming it again. Removing it sends their calls to voicemail. */
+    public function mobile(Request $request, User $user, MobileConfirmation $confirmation): RedirectResponse
+    {
+        abort_unless($user->isForwardOnly(), 404); // people with a sign-in set their own, under Phone
+
+        $mobile = $this->mobileFrom($request->validateWithBag('mobile', ['mobile' => ['nullable', 'string', 'max:20']]), 'mobile');
+        if ($mobile !== $user->mobile) {
+            $user->forceFill(['mobile' => $mobile, 'mobile_verified_at' => null, 'follow_me' => $mobile ? User::FOLLOW_ME_TOGETHER : User::FOLLOW_ME_OFF])->save();
+        }
+
+        return back()->with('status', match (true) {
+            $mobile === null => "{$user->name}'s calls now go straight to their voicemail.",
+            $user->mobile_verified_at !== null => 'Saved.',
+            default => $this->confirming($user, $confirmation, 'Saved.'),
+        });
+    }
+
+    /** Calls a forward-only contact's mobile again so they can press 1. */
+    public function confirmMobile(User $user, MobileConfirmation $confirmation): RedirectResponse
+    {
+        abort_unless($user->isForwardOnly() && $user->mobile !== null && $user->mobile_verified_at === null, 404);
+
+        return back()->with('status', $this->confirming($user, $confirmation, ''));
+    }
+
+    private function confirming(User $user, MobileConfirmation $confirmation, string $done): string
+    {
+        if ($user->mobile === null) {
+            return trim($done.' Their calls go to their voicemail, which is emailed to them.');
+        }
+        $problem = $confirmation->call($user);
+
+        return trim($done.' '.($problem === null
+            ? "Calling {$user->name}'s mobile now: they press 1 to confirm it. Until then their calls go to voicemail."
+            : "Their mobile isn't confirmed yet, so calls go to voicemail for now. {$problem}"));
+    }
+
+    /** @param array<string, mixed> $data */
+    private function mobileFrom(array $data, string $bag = 'default'): ?string
+    {
+        if (! filled($data['mobile'] ?? null)) {
+            return null;
+        }
+
+        return MobileConfirmation::normalise((string) $data['mobile'])
+            ?? throw ValidationException::withMessages(['mobile' => 'Enter a UK mobile number, such as 07700 900123.'])->errorBag($bag);
+    }
+
+    /**
+     * Switch someone between a full account and a forward-only contact. Going
+     * forward-only ends their sign-in and removes their phones; getting a
+     * sign-in back takes one of the plan's users and emails them a link.
+     */
+    public function type(Request $request, User $user, UserTypes $types, LicenceManager $licences, MobileConfirmation $confirmation): RedirectResponse
+    {
+        abort_if($user->isOwner() || $user->is($request->user()), 403);
+        $data = $request->validate(['type' => ['required', Rule::in([self::FORWARD_ONLY, User::ROLE_USER, User::ROLE_ADMIN])]]);
+
+        if ($data['type'] === self::FORWARD_ONLY) {
+            abort_if($user->isForwardOnly(), 404);
+            $types->makeForwardOnly($user);
+            $done = "{$user->name} is now a forward-only contact: signed out, with their phones removed.";
+
+            return back()->with('status', $user->mobile_verified_at !== null
+                ? $done.' Their calls now ring their mobile.'
+                : $this->confirming($user, $confirmation, $done));
+        }
+
+        abort_unless($user->isForwardOnly(), 404);
+        $max = $licences->current()->maxUsers();
+        $added = DB::transaction(function () use ($user, $types, $data, $max) {
+            if (User::query()->seated()->lockForUpdate()->count() >= $max) {
+                return false;
+            }
+            $types->giveSignIn($user, $data['type']);
+
+            return true;
+        });
+        if (! $added) {
+            return back()->withErrors(['type' => "Your plan allows {$max} users. Upgrade or remove a user first."], 'type');
+        }
+
+        $link = Invites::link($user);
+        Mail::to($user)->queue(new UserInvited($user, $link, $request->user()->name));
+
+        return back()->with('invited', ['email' => $user->email, 'link' => $link]);
+    }
+
     /** Email someone a fresh link to set their password (lost invite, forgotten password). Never shown here. */
     public function invite(Request $request, User $user): RedirectResponse
     {
+        abort_if($user->isForwardOnly(), 404);
+
         Mail::to($user)->queue(new UserInvited($user, Invites::link($user), $request->user()->name));
 
         return back()->with('status', "Sign-in link emailed to {$user->email}.");
@@ -120,6 +253,7 @@ class UserController extends Controller
     public function update(Request $request, User $user): RedirectResponse
     {
         abort_if($user->isOwner(), 403, 'The owner role cannot be changed here.');
+        abort_if($user->isForwardOnly(), 404);
 
         $data = $request->validate(['role' => ['required', Rule::in([User::ROLE_ADMIN, User::ROLE_USER])]]);
         $user->role = $data['role'];
@@ -128,12 +262,18 @@ class UserController extends Controller
         return back()->with('status', "{$user->name} is now ".($user->isAdmin() ? 'an admin' : 'a user').'.');
     }
 
-    public function destroy(Request $request, User $user): RedirectResponse
+    public function destroy(Request $request, User $user, UserTypes $types): RedirectResponse
     {
         abort_if($user->isOwner() || $user->is($request->user()), 403);
 
-        $user->delete();
+        // Their voicemail goes with them, unless a box still reaches someone else.
+        $removed = DB::transaction(function () use ($user, $types) {
+            $boxes = $types->mailboxesOf($user);
+            $user->delete();
 
-        return back()->with('status', "{$user->name} was removed.");
+            return $types->removeLeftoverMailboxes($boxes);
+        });
+
+        return back()->with('status', "{$user->name} was removed.".($removed === [] ? '' : ' Their voicemail box ('.implode(', ', $removed).') and its messages were deleted too.'));
     }
 }

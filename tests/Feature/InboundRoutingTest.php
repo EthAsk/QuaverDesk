@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Domain\Licensing\Plan;
+use App\Models\Call;
 use App\Models\IvrMenu;
 use App\Models\PhoneNumber;
 use App\Models\RingGroup;
@@ -57,6 +58,26 @@ class InboundRoutingTest extends TestCase
         $this->assertStringContainsString('bridge', $this->inbound(3, '02079460000'));
         // Registration trunks: the request line carries the account name, the To header the number.
         $this->assertStringContainsString('bridge', $this->inbound(4, 'acct12345', ['to_user' => '442079460000']));
+    }
+
+    public function test_a_secure_trunk_only_takes_calls_with_encrypted_audio(): void
+    {
+        $trunk = SipTrunk::create([
+            'name' => 'Secure', 'provider' => 'twilio', 'inbound_ips' => [['ip' => '203.0.113.20', 'prefix' => 32]],
+            'origination_uris' => ['sip:acme.pstn.twilio.com'], 'status' => 'active', 'secure' => true,
+        ]);
+        PhoneNumber::create(['e164' => '+442079460000', 'destination' => "user:{$this->owner->id}", 'sip_trunk_id' => $trunk->id]);
+
+        $this->assertStringContainsString('not in service', $this->inbound(20));
+        $this->assertDatabaseHas('calls', ['carrier_sid' => self::callId(20), 'status' => 'rejected', 'decision' => 'reject']);
+        $this->assertStringContainsString('without encrypted audio', Call::query()->where('carrier_sid', self::callId(20))->value('reason'));
+        $this->assertStringContainsString('bridge', $this->inbound(21, extra: ['srtp' => 'AES_CM_128_HMAC_SHA1_80']));
+
+        // The provider is told to use TLS on the secure port.
+        config(['voip.freeswitch.trunk_address' => 'sip:voice.example.net:5080']);
+        $this->assertSame('sip:voice.example.net:5081;transport=tls', $trunk->inboundAddress());
+        $trunk->secure = false;
+        $this->assertSame('sip:voice.example.net:5080', $trunk->inboundAddress());
     }
 
     public function test_ivr_menu_then_choice(): void

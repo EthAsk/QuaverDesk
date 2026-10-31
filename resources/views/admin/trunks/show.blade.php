@@ -18,13 +18,23 @@
             <tbody>
             <tr><th>Send our incoming calls to</th><td>
                 @if ($address)
-                    <code>sip:{{ $address }}</code>
+                    <code>{{ $address }}</code>
+                    @if (app(\App\Tenancy\Tenancy::class)->enabled())
+                        <div class="muted small">This address is this trunk's own. Calls sent anywhere else are refused.</div>
+                    @endif
                 @else
                     <span class="muted">This server's public address on port 5080 (set VOICE_TRUNK_ADDRESS to show it here).</span>
                 @endif
             </td></tr>
             <tr><th>Allowed to send us calls</th><td>{{ collect($trunk->inbound_ips)->map(fn ($i) => $i['ip'].'/'.$i['prefix'])->implode(', ') }}</td></tr>
             <tr><th>We send outgoing calls to</th><td>{{ implode(', ', $trunk->origination_uris) }}</td></tr>
+            <tr><th>Encryption</th><td>
+                @if ($trunk->secure)
+                    TLS and encrypted audio (SRTP), both ways. Turn this on at {{ $provider }} too (Twilio: Secure Trunking).
+                @else
+                    None. Calls and audio cross the internet unencrypted; edit the trunk to make it secure if {{ $provider }} supports TLS and SRTP.
+                @endif
+            </td></tr>
             <tr><th>Authentication</th><td>
                 @if ($trunk->auth_username)
                     Username <code>{{ $trunk->auth_username }}</code>{{ $trunk->register ? ', registered' : '' }}

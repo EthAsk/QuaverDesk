@@ -28,3 +28,21 @@ document.addEventListener('change', (event) => {
         event.target.form.requestSubmit();
     }
 });
+
+// <button data-copy="text"> copies the text; <button data-copy-from="id"> copies that element's text.
+document.addEventListener('click', async (event) => {
+    const button = event.target.closest('button[data-copy], button[data-copy-from]');
+    if (!button) {
+        return;
+    }
+    event.preventDefault();
+    const text = button.dataset.copy ?? document.getElementById(button.dataset.copyFrom)?.textContent.trim() ?? '';
+    const label = button.dataset.label ??= button.textContent;
+    try {
+        await navigator.clipboard.writeText(text);
+        button.textContent = 'Copied';
+    } catch {
+        button.textContent = 'Select and copy it';
+    }
+    setTimeout(() => { button.textContent = label; }, 1500);
+});

@@ -15,6 +15,13 @@
     <nav class="side" aria-label="Operator">
         <div class="brand">{{ config('app.name') }}<span>.</span> <small class="muted">operator</small></div>
         <a href="{{ route('operator.companies') }}" @class(['on' => request()->routeIs('operator.companies*')])>Companies</a>
+        @if (Route::has('operator.calls'))
+            <a href="{{ route('operator.calls') }}" @class(['on' => request()->routeIs('operator.calls')])>Call logs</a>
+            <a href="{{ route('operator.server-log') }}" @class(['on' => request()->routeIs('operator.server-log')])>Server log</a>
+            <a href="{{ route('operator.voice-log') }}" @class(['on' => request()->routeIs('operator.voice-log')])>Voice server log</a>
+            <a href="{{ route('operator.licences') }}" @class(['on' => request()->routeIs('operator.licences*')])>Licences</a>
+            <a href="{{ route('operator.resellers') }}" @class(['on' => request()->routeIs('operator.resellers*')])>Resellers</a>
+        @endif
         <a href="{{ route('operator.audit') }}" @class(['on' => request()->routeIs('operator.audit')])>Audit log</a>
         <div class="spacer"></div>
         <form method="POST" action="{{ route('operator.logout') }}">

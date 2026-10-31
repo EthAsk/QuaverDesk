@@ -20,7 +20,7 @@ class DashboardController extends Controller
                 'label' => $f->label(),
                 'enabled' => $licence->allows($f),
             ]),
-            'userCount' => User::count(),
+            'userCount' => User::query()->seated()->count(),
             'setupDone' => Acknowledgement::currentAccepted(),
         ]);
     }

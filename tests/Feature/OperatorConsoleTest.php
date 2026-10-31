@@ -91,6 +91,15 @@ class OperatorConsoleTest extends TestCase
         $this->get('http://localhost/operator/login')->assertNotFound();
     }
 
+    public function test_the_bare_address_and_sign_in_page_lead_a_signed_in_operator_to_the_console(): void
+    {
+        $this->get('http://operator.quaverdesk.test/')->assertRedirect('/operator');
+
+        $this->signIn();
+        $this->get(self::CONSOLE.'/login')->assertRedirect(route('operator.home'));
+        $this->get(self::CONSOLE.'/two-factor')->assertRedirect(route('operator.home'));
+    }
+
     public function test_signing_in_needs_the_password_then_a_fresh_code(): void
     {
         $operator = $this->operator();
@@ -237,6 +246,10 @@ class OperatorConsoleTest extends TestCase
         Mail::fake();
         $this->signIn();
 
+        // The page lets its form lead on to the company's address, or the browser blocks the redirect.
+        $page = $this->get(self::CONSOLE.'/companies/'.$this->acme->id)->assertSee('Start support visit');
+        $this->assertStringContainsString("form-action 'self' http://acme.quaverdesk.test", $page->headers->get('Content-Security-Policy'));
+
         $this->post(self::CONSOLE.'/companies/'.$this->acme->id.'/support', ['user_id' => $this->acmeOwner->id, 'reason' => 'short'])
             ->assertSessionHasErrors('reason');
         $redirect = $this->post(self::CONSOLE.'/companies/'.$this->acme->id.'/support', ['user_id' => $this->acmeOwner->id, 'reason' => 'Ticket 42: ring group not ringing'])
@@ -275,5 +288,18 @@ class OperatorConsoleTest extends TestCase
         // Signed in as themselves, the same person still needs both.
         $this->actingAs($this->acmeOwner, 'web');
         $this->get('http://acme.quaverdesk.test/admin/users')->assertRedirectContains('/security');
+    }
+
+    public function test_the_operator_sees_a_companys_desk_phone_log(): void
+    {
+        $this->tenancy->run($this->acme, function () {
+            $phone = \App\Models\DeskPhone::query()->create(['user_id' => $this->acmeOwner->id, 'label' => 'Reception', 'sip_username' => 'u1-abc123', 'sip_password' => 'Secret123456Abc']);
+            \App\Models\DeskPhoneEvent::record(\App\Models\DeskPhoneEvent::ADMIN_PASSWORD_SHOWN, $phone, $this->acmeOwner, ip: '203.0.113.7');
+        });
+        $this->tenancy->set(null);
+        $this->actingAs($this->operator(), 'operator');
+
+        $this->get('http://operator.quaverdesk.test/operator/companies/'.$this->acme->id)->assertOk()
+            ->assertSee('Desk phone log')->assertSee('Admin password shown')->assertSee('Ann Acme')->assertSee('203.0.113.7');
     }
 }

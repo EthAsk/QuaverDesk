@@ -74,6 +74,13 @@
                 another customer of this service, incoming calls are only accepted when they arrive at your trunk's own registration.</p>
         @endif
 
+        @if (config('voip.freeswitch.tls'))
+            <label class="check">
+                <input type="checkbox" name="secure" value="1" @checked(old('secure', $trunk?->secure))>
+                <span>Secure: calls both ways over TLS with encrypted audio (SRTP). Turn the same on at the provider (Twilio calls it Secure Trunking); calls that aren't encrypted are refused.</span>
+            </label>
+        @endif
+
         <button class="btn" type="submit">{{ $trunk ? 'Save changes' : 'Connect trunk' }}</button>
     </form>
 @endsection

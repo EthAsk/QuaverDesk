@@ -13,7 +13,9 @@ use RuntimeException;
  *
  *   vars/quaverdesk.xml      SIP domain, webhook address and credentials, event socket password
  *   sofia/internal-tls.xml   TLS settings for desk phones and wss:// (empty when TLS is off)
- *   directory/users.xml      softphones and desk phones that may sign in
+ *   sofia-external/tls.xml   TLS for secure trunks (empty when TLS is off)
+ *   directory/users.xml      softphones and desk phones that may sign in, with the
+ *                            busy lamp address (presence_id) their calls are shown under
  *   gateways/trunks.xml      SIP trunks for calls to and from the phone network
  *   acl/trunks.xml           provider addresses allowed to send us calls
  *
@@ -26,6 +28,9 @@ use RuntimeException;
  */
 class ConfigWriter
 {
+    /** Encrypted audio on secure trunks: the suites carriers offer (Twilio uses the first). */
+    public const TRUNK_SRTP = 'mandatory:AES_CM_128_HMAC_SHA1_80:AES_CM_128_HMAC_SHA1_32';
+
     private const STATE = '.state.json';
 
     public function __construct(
@@ -53,6 +58,7 @@ class ConfigWriter
         // Group-readable: FreeSWITCH reads it through the folder's group (see docs/VOICE-SERVER.md).
         $this->put('vars/quaverdesk.xml', $this->vars(), 0640);
         $this->put('sofia/internal-tls.xml', $this->wrap($this->tls ? $this->tlsParams() : ''));
+        $this->put('sofia-external/tls.xml', $this->wrap($this->tls ? $this->trunkTlsParams() : ''));
         $this->put('directory/users.xml', $this->wrap(implode('', $users)));
         $this->put('gateways/trunks.xml', $this->wrap(implode('', $gateways)));
         $this->put('acl/trunks.xml', $this->wrap($this->acl()));
@@ -109,32 +115,57 @@ class ConfigWriter
     }
 
     /** @return array<string, string> keyed by SIP username */
+    /** Secure trunks over TLS on their own port; plain SIP stays on 5080 for providers without it. */
+    private function trunkTlsParams(): string
+    {
+        return '<param name="tls" value="true"/>'
+            .'<param name="tls-bind-params" value="transport=tls"/>'
+            .'<param name="tls-sip-port" value="'.(int) config('voip.freeswitch.trunk_tls_port').'"/>'
+            .'<param name="tls-cert-dir" value="$${certs_dir}"/>'
+            .'<param name="tls-version" value="tlsv1.2"/>'
+            ."\n";
+    }
+
     private function users(): array
     {
         $out = [];
 
-        foreach (User::query()->orderBy('id')->get() as $user) {
+        // Forward-only contacts have no softphone or desk phone to sign in.
+        foreach (User::query()->seated()->orderBy('id')->get() as $user) {
             $id = $user->carrierIdentity();
             $out[$id] = $this->user($id, $user->sipSecret(), [
                 'effective_caller_id_name' => self::name($user->name),
                 // Shown to colleagues they call. Who is calling is taken from the SIP username, never this.
                 'effective_caller_id_number' => $user->dialable(),
+                'presence_id' => $this->presenceId($user),
             ] + $this->holdMusicFor($user));
         }
 
         foreach (DeskPhone::query()->with('user')->orderBy('id')->get() as $phone) {
-            if ($phone->user === null) {
+            if ($phone->user === null || $phone->user->isForwardOnly()) {
                 continue;
             }
             $out[$phone->sip_username] = $this->user($phone->sip_username, $phone->sip_password, [
                 'effective_caller_id_name' => self::name($phone->user->name),
                 'effective_caller_id_number' => $phone->user->dialable(),
+                'presence_id' => $this->presenceId($phone->user),
                 // Desk phones must encrypt their audio.
                 'rtp_secure_media' => 'mandatory',
-            ] + $this->holdMusicFor($phone->user));
+            ] + $this->holdMusicFor($phone->user), ($cidrs = $phone->lockCidrs()) !== null ? implode(',', $cidrs) : null);
         }
 
         return $out;
+    }
+
+    /**
+     * The busy lamp address every call to or from this person's phones is
+     * shown under (calls to them get it through the domain's dial-string).
+     * Never the SIP username: colleagues' phones subscribe to it, and phones of
+     * every company share this SIP domain.
+     */
+    private function presenceId(User $user): string
+    {
+        return $user->blfId().'@'.$this->domain;
     }
 
     /**
@@ -150,13 +181,20 @@ class ConfigWriter
         return $url ? ['hold_music' => $url] : [];
     }
 
-    /** @param array<string, string> $vars */
-    private function user(string $id, string $password, array $vars): string
+    /**
+     * @param  array<string, string>  $vars
+     * @param  ?string  $allowedIps  CIDRs it may register and call from (auth-acl); null for anywhere
+     */
+    private function user(string $id, string $password, array $vars, ?string $allowedIps = null): string
     {
         $this->assertSafe($id, '/^[A-Za-z0-9_-]{1,64}$/');
+        if ($allowedIps !== null) {
+            $this->assertSafe($allowedIps, '#^[0-9a-fA-F.:/,]{1,1024}$#');
+        }
 
         $xml = '<user id="'.$this->attr($id).'"><params>'
             .'<param name="a1-hash" value="'.md5("{$id}:{$this->domain}:{$password}").'"/>'
+            .($allowedIps !== null ? '<param name="auth-acl" value="'.$this->attr($allowedIps).'"/>' : '')
             .'</params><variables>'
             .'<variable name="user_context" value="users"/>';
         foreach ($vars as $k => $v) {
@@ -175,6 +213,15 @@ class ConfigWriter
             foreach (array_values($trunk->origination_uris) as $i => $uri) {
                 $name = $trunk->gatewayNames()[$i];
                 [$proxy, $transport] = self::proxy($uri);
+                if ($trunk->secure) {
+                    // TLS whatever the address says, on the usual TLS port unless it names one.
+                    $transport = 'tls';
+                    $proxy .= str_contains($proxy, ':') ? '' : ':5061';
+                }
+                // register-transport only covers registering: calls go the way the proxy address says.
+                if ($transport !== 'udp') {
+                    $proxy .= ';transport='.$transport;
+                }
 
                 $params = [
                     'proxy' => $proxy,
@@ -192,7 +239,9 @@ class ConfigWriter
                     $xml .= '<param name="'.$k.'" value="'.$this->attr($v).'"/>';
                 }
                 // Offer carriers G.711 only; otherwise the leg copies the caller's codec (Opus from browsers).
-                $xml .= '<variables><variable name="absolute_codec_string" value="PCMA,PCMU" direction="outbound"/></variables>';
+                $xml .= '<variables><variable name="absolute_codec_string" value="PCMA,PCMU" direction="outbound"/>'
+                    .($trunk->secure ? '<variable name="rtp_secure_media" value="'.self::TRUNK_SRTP.'" direction="outbound"/>' : '')
+                    .'</variables>';
                 $out[$name] = $xml."</gateway>\n";
             }
         }

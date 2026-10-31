@@ -102,4 +102,81 @@ class DeskPhoneTest extends TestCase
         $this->actingAs($this->owner)->withSession(['auth.password_confirmed_at' => time()])
             ->get('/admin/desk-phones')->assertRedirect('/dashboard');
     }
+
+    public function test_a_phone_can_be_locked_to_where_it_signs_in_from(): void
+    {
+        $this->usePlan(Plan::Pro);
+        $dir = storage_path('framework/testing/fs-'.bin2hex(random_bytes(4)));
+        config(['voip.freeswitch.conf_dir' => $dir, 'voip.freeswitch.esl_password' => null, 'voip.freeswitch.webhook_secret' => str_repeat('a1', 10)]);
+        $admin = $this->actingAs($this->owner)->withSession(['auth.password_confirmed_at' => time()]);
+
+        foreach (['10.0.0.0/4', 'office', '1.1.1.1, 2.2.2.2, 3.3.3.3, 4.4.4.4, 5.5.5.5, 6.6.6.6'] as $bad) {
+            $admin->patch("/admin/desk-phones/{$this->phone->id}/lock", ['allowed_ips' => $bad])->assertSessionHasErrors('allowed_ips', null, 'lock');
+        }
+        $admin->patch("/admin/desk-phones/{$this->phone->id}/lock", ['allowed_ips' => '203.0.113.7, 198.51.100.0/24 2001:db8::1', 'filter_lan' => '1'])
+            ->assertSessionHas('status', 'Reception can now only sign in from 203.0.113.7, 198.51.100.0/24, 2001:db8::1.');
+        $this->assertSame('203.0.113.7/32,198.51.100.0/24,2001:db8::1/128', $this->phone->fresh()->allowed_ips);
+
+        app(\App\Voice\VoiceServer::class)->sync();
+        $users = file_get_contents($dir.'/directory/users.xml');
+        $this->assertStringContainsString('<user id="u'.$this->owner->id.'-abc123"><params><param name="a1-hash" value="', $users);
+        $this->assertStringContainsString('<param name="auth-acl" value="203.0.113.7/32,198.51.100.0/24,2001:db8::1/128"/>', $users);
+        $this->assertSame(1, substr_count($users, 'auth-acl')); // the softphone isn't locked
+
+        // Not filtering LAN addresses (the default): local networks may sign in too.
+        $admin->patch("/admin/desk-phones/{$this->phone->id}/lock", ['allowed_ips' => '203.0.113.7'])
+            ->assertSessionHas('status', 'Reception can now only sign in from 203.0.113.7, or from the local network.');
+        app(\App\Voice\VoiceServer::class)->sync();
+        $this->assertStringContainsString('<param name="auth-acl" value="203.0.113.7/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"/>', file_get_contents($dir.'/directory/users.xml'));
+
+        $admin->patch("/admin/desk-phones/{$this->phone->id}/lock", ['allowed_ips' => ''])->assertSessionHas('status', 'Reception can sign in from anywhere.');
+        $this->assertNull($this->phone->fresh()->allowed_ips);
+        \Illuminate\Support\Facades\File::deleteDirectory($dir);
+    }
+
+    public function test_a_phone_can_be_locked_to_a_host_name_that_follows_its_address(): void
+    {
+        $this->usePlan(Plan::Pro);
+        $dir = storage_path('framework/testing/fs-'.bin2hex(random_bytes(4)));
+        config(['voip.freeswitch.conf_dir' => $dir, 'voip.freeswitch.esl_password' => null, 'voip.freeswitch.webhook_secret' => str_repeat('a1', 10)]);
+        $dns = new class extends \App\Voice\PhoneLocks
+        {
+            public array $records = ['office.example.com' => ['203.0.113.7/32']];
+
+            protected function lookup(string $host): array
+            {
+                return $this->records[$host] ?? [];
+            }
+        };
+        $this->app->instance(\App\Voice\PhoneLocks::class, $dns);
+        $users = function () use ($dir) {
+            app(\App\Voice\VoiceServer::class)->sync();
+
+            return file_get_contents($dir.'/directory/users.xml');
+        };
+
+        $this->actingAs($this->owner)->withSession(['auth.password_confirmed_at' => time()])
+            ->patch("/admin/desk-phones/{$this->phone->id}/lock", ['allowed_ips' => 'Office.Example.com.'])
+            ->assertSessionHas('status', 'Reception can now only sign in from office.example.com, or from the local network.');
+        $this->assertStringContainsString('<param name="auth-acl" value="203.0.113.7/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"/>', $users());
+
+        // The office's address changes: the refresh notices and updates the voice server.
+        Queue::fake();
+        $dns->records['office.example.com'] = ['198.51.100.9/32'];
+        $this->artisan('phones:refresh-locks')->assertSuccessful();
+        Queue::assertPushed(SyncVoiceServer::class);
+        $this->assertStringContainsString('<param name="auth-acl" value="198.51.100.9/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"/>', $users());
+
+        // Nothing changed: nothing to do.
+        Queue::fake();
+        $this->artisan('phones:refresh-locks')->assertSuccessful();
+        Queue::assertNotPushed(SyncVoiceServer::class);
+
+        // A failed lookup keeps the last address; a name that never resolved lets nothing in.
+        $dns->records = [];
+        $this->assertStringContainsString('<param name="auth-acl" value="198.51.100.9/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"/>', $users());
+        $this->phone->update(['allowed_ips' => 'nowhere.example.com']);
+        $this->assertStringContainsString('<param name="auth-acl" value="0.0.0.0/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"/>', $users());
+        \Illuminate\Support\Facades\File::deleteDirectory($dir);
+    }
 }

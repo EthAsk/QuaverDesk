@@ -41,6 +41,9 @@ class IdentifyTenant
         $operatorHost = (string) config('tenancy.operator_host');
         $isConsole = $request->is('operator', 'operator/*');
         if ($operatorHost !== '' && $host === $operatorHost) {
+            if ($request->is('/')) {
+                return redirect('/operator');
+            }
             abort_unless($isConsole, 404);
 
             return $next($request);
