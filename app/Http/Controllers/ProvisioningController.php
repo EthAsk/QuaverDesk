@@ -14,8 +14,11 @@ use Symfony\Component\HttpFoundation\IpUtils;
 /**
  * Desk phones download their settings here (see PhoneProvisioning). Needs the
  * company's provisioning address and login, a phone registered with the MAC
- * address asked for, and (if the phone is locked) an allowed address.
- * Every download and refusal is recorded for admins and the operator.
+ * address asked for, (if the phone is locked) an allowed address, and either
+ * an open set-up window or the address the phone set itself up from. A
+ * download from anywhere else waits for an admin to approve it, since a MAC
+ * address isn't secret. Every download and refusal is recorded for admins and
+ * the operator.
  */
 class ProvisioningController extends Controller
 {
@@ -56,8 +59,22 @@ class ProvisioningController extends Controller
             abort(403);
         }
 
+        $ip = (string) $request->ip();
+        if (! $phone->acceptsDownloadFrom($ip)) {
+            // Logged once per address an hour, so a phone retrying doesn't flood the log.
+            if ($phone->waiting_ip !== $ip || $phone->waiting_at === null || $phone->waiting_at->lt(now()->subHour())) {
+                DeskPhoneEvent::record(DeskPhoneEvent::WAITING, $phone, detail: 'Asked from an address it has not used before.'.($agent !== '' ? ' '.$agent : ''));
+            }
+            $phone->forceFill(['waiting_ip' => $ip, 'waiting_agent' => $agent ?: null, 'waiting_at' => now()])->saveQuietly();
+            abort(403);
+        }
+
         [$type, $body] = $provisioning->render($phone);
-        $phone->forceFill(['provisioned_at' => now(), 'provisioned_ip' => $request->ip(), 'provisioned_agent' => $agent ?: null])->saveQuietly();
+        // Set up: this address is trusted from now on, and the window closes.
+        $phone->forceFill([
+            'provisioned_at' => now(), 'provisioned_ip' => $ip, 'provisioned_agent' => $agent ?: null,
+            'trusted_ip' => $ip, 'setup_until' => null, 'waiting_ip' => null, 'waiting_agent' => null, 'waiting_at' => null,
+        ])->saveQuietly();
         DeskPhoneEvent::record(DeskPhoneEvent::PROVISIONED, $phone, detail: $agent ?: null);
 
         return response($body, 200, ['Content-Type' => $type, 'Cache-Control' => 'no-store, private']);

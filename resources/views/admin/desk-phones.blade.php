@@ -79,6 +79,28 @@
                                         <button class="btn ghost small" type="submit">Save</button>
                                     </form>
                                     @if ($p->provisioned())
+                                        @if ($p->waiting_ip)
+                                            <form method="POST" action="{{ route('admin.desk-phones.approve', $p) }}" class="flash warn row" style="margin:0;width:100%;flex-wrap:wrap;gap:8px"
+                                                  data-confirm="Only approve this if {{ $p->label }} really is at {{ $p->waiting_ip }}. Anyone who knows its MAC address and your provisioning login could ask from there.">
+                                                @csrf
+                                                <span><strong>Waiting for approval:</strong> asked for its settings from {{ $p->waiting_ip }}{{ $p->waiting_agent ? ' ('.\Illuminate\Support\Str::limit($p->waiting_agent, 60).')' : '' }},
+                                                    {{ $p->waiting_at->timezone('Europe/London')->format('j M, H:i') }}. {{ $p->trusted_ip ? 'It normally asks from '.$p->trusted_ip.'.' : '' }}</span>
+                                                <button class="btn small" type="submit">Approve {{ $p->waiting_ip }}</button>
+                                            </form>
+                                        @endif
+                                        <span class="muted">
+                                            @if ($p->setupOpen())
+                                                Set-up window open until {{ $p->setup_until->timezone('Europe/London')->format('j M, H:i') }}.
+                                            @elseif ($p->trusted_ip)
+                                                Trusted address {{ $p->trusted_ip }}.
+                                            @endif
+                                        </span>
+                                        @unless ($p->setupOpen())
+                                            <form method="POST" action="{{ route('admin.desk-phones.setup-window', $p) }}"
+                                                  data-confirm="Let {{ $p->label }} fetch its settings from anywhere for the next {{ \App\Models\DeskPhone::SETUP_HOURS }} hours? Use this for a new handset or after a move.">
+                                                @csrf <button class="btn ghost small" type="submit">Open set-up window</button>
+                                            </form>
+                                        @endunless
                                         <span class="muted">
                                             @if ($p->provisioned_at)
                                                 Last fetched its settings {{ $p->provisioned_at->timezone('Europe/London')->format('j M Y, H:i') }} from {{ $p->provisioned_ip }}{{ $p->provisioned_agent ? ' ('.\Illuminate\Support\Str::limit($p->provisioned_agent, 60).')' : '' }}.

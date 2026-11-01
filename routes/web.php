@@ -151,6 +151,8 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
                 Route::put('/desk-phones/{phone}/keys', [DeskPhoneController::class, 'keys'])->name('desk-phones.keys');
                 Route::post('/desk-phones/{phone}/admin-password', [DeskPhoneController::class, 'adminPassword'])->name('desk-phones.admin-password');
                 Route::post('/desk-phones/{phone}/admin-password/new', [DeskPhoneController::class, 'newAdminPassword'])->name('desk-phones.admin-password.new');
+                Route::post('/desk-phones/{phone}/approve', [DeskPhoneController::class, 'approve'])->name('desk-phones.approve');
+                Route::post('/desk-phones/{phone}/setup-window', [DeskPhoneController::class, 'setupWindow'])->name('desk-phones.setup-window');
                 Route::post('/desk-phones/{phone}/send-settings', [DeskPhoneController::class, 'sendSettings'])->middleware('throttle:10,1')->name('desk-phones.send-settings');
                 Route::post('/desk-phones/provisioning-login', [DeskPhoneController::class, 'newLogin'])->name('desk-phones.provisioning-login');
                 Route::delete('/desk-phones/{phone}', [DeskPhoneController::class, 'destroy'])->name('desk-phones.destroy');

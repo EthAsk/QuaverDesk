@@ -127,6 +127,23 @@ Before you turn it on, check these:
     address and password**. Phones already set up keep working, but can't
     fetch changes until they're given the new values.
 
+### The set-up window and new addresses
+
+A MAC address isn't secret, so the provisioning login and MAC address alone
+aren't enough to get a phone's settings. When you add a phone, or change its
+make or MAC address, a **set-up window** opens for 24 hours. The phone's first
+download in that time is accepted from anywhere, and the address it came from
+becomes the phone's **trusted address**. Then the window closes.
+
+After that, the phone's daily checks from its trusted address carry on as
+normal. A download from any other address is held back, and the phone's line
+shows **Waiting for approval**, with the address and phone model. The same goes
+for a phone that has moved, or an office whose internet address has changed. If
+it really is your phone, press **Approve**: that address becomes trusted and the
+phone is told to fetch its settings. For a replacement handset or a move to a
+new site, press **Open set-up window** instead. Approvals and set-up windows are
+recorded in the phone log.
+
 ### 4. Check it worked
 
 Look in the **phone log** at the bottom of the page. You should see *Phone

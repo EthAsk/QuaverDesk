@@ -29,6 +29,9 @@ class DeskPhoneEvent extends Model
     public const RESYNC_SENT = 'resync_sent';
     public const LOGIN_CHANGED = 'provisioning_login_changed';
     public const KEYS_CHANGED = 'blf_keys_changed';
+    public const WAITING = 'waiting_for_approval';
+    public const APPROVED = 'approved';
+    public const SETUP_OPENED = 'setup_opened';
 
     public const LABELS = [
         self::ADDED => 'Phone added',
@@ -43,6 +46,9 @@ class DeskPhoneEvent extends Model
         self::RESYNC_SENT => 'Phone told to fetch its settings',
         self::LOGIN_CHANGED => 'Provisioning login changed',
         self::KEYS_CHANGED => 'Busy lamp keys changed',
+        self::WAITING => 'Settings download waiting for approval',
+        self::APPROVED => 'New address approved',
+        self::SETUP_OPENED => 'Set-up window opened',
     ];
 
     protected $fillable = ['desk_phone_id', 'user_id', 'kind', 'phone_label', 'ip', 'detail'];

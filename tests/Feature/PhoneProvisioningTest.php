@@ -270,4 +270,74 @@ class PhoneProvisioningTest extends TestCase
         $this->admin()->patch("/admin/desk-phones/{$phone->id}/provisioning", ['brand' => ''])->assertSessionHasNoErrors();
         $this->assertSame([null, null, null], [$phone->fresh()->brand, $phone->fresh()->mac, $phone->fresh()->admin_password]);
     }
+
+    private function fetchFrom(string $ip, string $file = '805ec0123456.cfg')
+    {
+        $login = app(PhoneProvisioning::class)->login();
+
+        return $this->call('GET', '/provision/'.$login['token'].'/'.$file, [], [], [], [
+            'HTTP_USER_AGENT' => 'Yealink SIP-T54W 96.86.0.70', 'PHP_AUTH_USER' => $login['username'], 'PHP_AUTH_PW' => $login['password'], 'REMOTE_ADDR' => $ip,
+        ]);
+    }
+
+    public function test_a_new_phone_sets_itself_up_once_then_new_addresses_wait_for_approval(): void
+    {
+        $phone = $this->addPhone('yealink', '80:5E:C0:12:34:56');
+        $this->assertTrue($phone->setupOpen());
+        $this->admin()->get('/admin/desk-phones')->assertSee('Set-up window open until');
+
+        // The first download, from anywhere, is accepted: that address is trusted and the window closes.
+        $this->fetchFrom('203.0.113.7')->assertOk();
+        $phone->refresh();
+        $this->assertSame('203.0.113.7', $phone->trusted_ip);
+        $this->assertFalse($phone->setupOpen());
+        $this->fetchFrom('203.0.113.7')->assertOk(); // its daily check
+
+        // Somewhere else: held back for an admin, and logged once however often it retries.
+        $this->fetchFrom('198.51.100.9')->assertForbidden();
+        $this->fetchFrom('198.51.100.9')->assertForbidden();
+        $phone->refresh();
+        $this->assertSame('198.51.100.9', $phone->waiting_ip);
+        $this->assertSame(1, DeskPhoneEvent::query()->where('kind', DeskPhoneEvent::WAITING)->count());
+        $this->admin()->get('/admin/desk-phones')->assertSee('Waiting for approval')->assertSee('Approve 198.51.100.9')->assertSee('It normally asks from 203.0.113.7.');
+
+        // Approving trusts the new address (and only it).
+        $this->admin()->post("/admin/desk-phones/{$phone->id}/approve")->assertSessionHas('status', fn ($m) => str_contains($m, 'may now fetch its settings from 198.51.100.9'));
+        $this->assertSame([$phone->sip_username], $this->voice->resynced);
+        $this->fetchFrom('198.51.100.9')->assertOk();
+        $this->fetchFrom('203.0.113.7')->assertForbidden();
+        $this->assertDatabaseHas('desk_phone_events', ['kind' => DeskPhoneEvent::APPROVED, 'desk_phone_id' => $phone->id, 'user_id' => $this->owner->id]);
+        $this->assertSame('203.0.113.7', $phone->fresh()->waiting_ip); // the old address now waits in turn
+        $this->admin()->post("/admin/desk-phones/{$phone->id}/setup-window");
+        $this->admin()->post("/admin/desk-phones/{$phone->id}/approve")->assertNotFound(); // a new window clears what was waiting
+    }
+
+    public function test_an_admin_reopens_the_window_and_a_new_handset_gets_one(): void
+    {
+        $phone = $this->addPhone('yealink', '80:5E:C0:12:34:56');
+        $this->fetchFrom('203.0.113.7')->assertOk();
+        $this->fetchFrom('198.51.100.9')->assertForbidden();
+
+        $this->admin()->post("/admin/desk-phones/{$phone->id}/setup-window")->assertSessionHas('status', fn ($m) => str_contains($m, 'can fetch its settings from anywhere until'));
+        $this->assertNull($phone->fresh()->waiting_ip);
+        $this->fetchFrom('198.51.100.9')->assertOk();
+        $this->assertSame('198.51.100.9', $phone->fresh()->trusted_ip);
+        $this->assertDatabaseHas('desk_phone_events', ['kind' => DeskPhoneEvent::SETUP_OPENED, 'desk_phone_id' => $phone->id]);
+
+        // The window closes by itself.
+        $this->admin()->post("/admin/desk-phones/{$phone->id}/setup-window");
+        $this->travel(DeskPhone::SETUP_HOURS + 1)->hours();
+        $this->fetchFrom('192.0.2.1')->assertForbidden();
+        $this->travelBack();
+
+        // A replacement handset (new MAC) starts afresh, from anywhere.
+        $this->admin()->patch("/admin/desk-phones/{$phone->id}/provisioning", ['brand' => 'yealink', 'mac' => '80:5E:C0:AA:BB:CC'])->assertSessionHasNoErrors();
+        $this->assertTrue($phone->fresh()->setupOpen());
+        $this->assertNull($phone->fresh()->trusted_ip);
+        $this->fetchFrom('192.0.2.50', '805ec0aabbcc.cfg')->assertOk();
+
+        // Saving the same make and MAC again doesn't reopen it.
+        $this->admin()->patch("/admin/desk-phones/{$phone->id}/provisioning", ['brand' => 'yealink', 'mac' => '80:5E:C0:AA:BB:CC']);
+        $this->assertFalse($phone->fresh()->setupOpen());
+    }
 }

@@ -73,6 +73,7 @@ class DeskPhoneController extends Controller
         ]);
         if ($brand) {
             $phone->newAdminPassword();
+            $phone->openSetup();
             $phone->save();
         }
         DeskPhoneEvent::record(DeskPhoneEvent::ADDED, $phone, $request->user(), "For {$phone->user->name}".($brand ? ', set up automatically as '.DeskPhone::BRANDS[$brand].' '.$phone->macLabel() : '').'.');
@@ -90,12 +91,18 @@ class DeskPhoneController extends Controller
         $data = $request->validateWithBag('provisioning', self::provisioningRules());
         [$brand, $mac] = self::brandAndMac($data, 'provisioning', $phone);
 
+        $changed = $brand !== $phone->brand || $mac !== $phone->mac;
         $phone->forceFill(['brand' => $brand, 'mac' => $mac]);
         if ($brand && ! $phone->admin_password) {
             $phone->newAdminPassword();
         }
+        if ($brand && $changed) {
+            // A new handset (or a new make): it may set itself up from wherever it is.
+            $phone->forceFill(['trusted_ip' => null])->openSetup();
+        }
         if (! $brand) {
-            $phone->forceFill(['admin_password' => null, 'provisioned_at' => null, 'provisioned_ip' => null, 'provisioned_agent' => null]);
+            $phone->forceFill(['admin_password' => null, 'provisioned_at' => null, 'provisioned_ip' => null, 'provisioned_agent' => null,
+                'setup_until' => null, 'trusted_ip' => null, 'waiting_ip' => null, 'waiting_agent' => null, 'waiting_at' => null]);
         }
         $phone->save();
         DeskPhoneEvent::record(DeskPhoneEvent::PROVISIONING_SET, $phone, $request->user(), $brand ? DeskPhone::BRANDS[$brand].' '.$phone->macLabel() : 'Turned off');
@@ -103,6 +110,28 @@ class DeskPhoneController extends Controller
         return back()->with('status', $brand
             ? "{$phone->label} will be set up automatically when it asks for its settings."
             : "{$phone->label} is no longer set up automatically.");
+    }
+
+    /** Trusts the address a held-back download came from; the phone gets its settings at its next try, which we ask for now. */
+    public function approve(Request $request, DeskPhone $phone, VoiceServer $voice): RedirectResponse
+    {
+        abort_unless($phone->provisioned() && $phone->waiting_ip, 404);
+        $ip = $phone->waiting_ip;
+        $phone->forceFill(['trusted_ip' => $ip, 'waiting_ip' => null, 'waiting_agent' => null, 'waiting_at' => null])->save();
+        DeskPhoneEvent::record(DeskPhoneEvent::APPROVED, $phone, $request->user(), "Downloads from {$ip} are now accepted.", $ip);
+
+        return back()->with('status', "{$phone->label} may now fetch its settings from {$ip}. ".$this->resync($request, $phone, $voice));
+    }
+
+    /** Lets the phone set itself up from anywhere for the next day (a new handset, or after a move). */
+    public function setupWindow(Request $request, DeskPhone $phone): RedirectResponse
+    {
+        abort_unless($phone->provisioned(), 404);
+        $phone->openSetup()->save();
+        DeskPhoneEvent::record(DeskPhoneEvent::SETUP_OPENED, $phone, $request->user());
+
+        return back()->with('status', "{$phone->label} can fetch its settings from anywhere until "
+            .$phone->setup_until->timezone('Europe/London')->format('j M, H:i').'. The address it uses is then trusted and the window closes.');
     }
 
     /** Shows the handset's web page password (page is behind password confirmation; recorded). */

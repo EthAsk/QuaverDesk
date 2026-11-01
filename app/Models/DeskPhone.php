@@ -28,9 +28,31 @@ class DeskPhone extends Model
             'sip_password' => 'encrypted',
             'admin_password' => 'encrypted',
             'provisioned_at' => 'datetime',
+            'setup_until' => 'datetime',
+            'waiting_at' => 'datetime',
             'filter_lan' => 'boolean',
             'blf_keys' => 'array',
         ];
+    }
+
+    /** How long a set-up window stays open: the phone's first download in it is accepted and its address trusted. */
+    public const SETUP_HOURS = 24;
+
+    public function setupOpen(): bool
+    {
+        return $this->setup_until !== null && $this->setup_until->isFuture();
+    }
+
+    /** Opens the set-up window (when the phone is added or its make or MAC changes, or an admin asks). */
+    public function openSetup(): static
+    {
+        return $this->forceFill(['setup_until' => now()->addHours(self::SETUP_HOURS), 'waiting_ip' => null, 'waiting_agent' => null, 'waiting_at' => null]);
+    }
+
+    /** May a settings download from $ip go ahead without an admin approving it? */
+    public function acceptsDownloadFrom(string $ip): bool
+    {
+        return $this->setupOpen() || ($this->trusted_ip !== null && hash_equals($this->trusted_ip, $ip));
     }
 
     /** "805EC0123456" or "80:5e:c0:12:34:56" as "805ec0123456"; null if it isn't a MAC address. */
