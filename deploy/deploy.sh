@@ -53,4 +53,4 @@ systemctl reload "$PHP_FPM_SERVICE"
 as_app "php artisan queue:restart"
 
 APP_URL="$({ grep -E '^APP_URL=' "$APP_DIR/.env" || true; } | tail -n1 | cut -d= -f2-)"
-echo "==> Done. Health check: ${APP_URL:-https://YOUR.DOMAIN}/up"
+echo "==> Done: QuaverDesk $(cat "$APP_DIR/VERSION" 2>/dev/null || echo "(no version)"). Health check: ${APP_URL:-https://YOUR.DOMAIN}/up"

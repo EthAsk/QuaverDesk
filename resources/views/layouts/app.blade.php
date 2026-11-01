@@ -90,6 +90,7 @@
         <footer class="legal">
             Source-available software provided "as is", without warranty, under the Elastic License 2.0.
             It is not a substitute for a landline or mobile for emergency calls.
+            <span class="version">QuaverDesk {{ config('quaverdesk.version') }}</span>
         </footer>
     </main>
 </div>

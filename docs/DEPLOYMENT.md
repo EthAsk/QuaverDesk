@@ -355,9 +355,13 @@ sudo quaverdesk-deploy
 ```
 
 This pulls the code, installs dependencies, builds assets, migrates the
-database, rebuilds caches, reloads PHP and restarts the worker. Calls keep
-being answered during the short maintenance window. Deploy out of hours, and
-read the commit messages for anything to do by hand.
+database, rebuilds caches, reloads PHP and restarts the worker, then shows the
+version you're now on. Calls keep being answered during the short maintenance
+window. Deploy out of hours, and read [CHANGELOG.md](../CHANGELOG.md) first:
+it lists what changed in each release and anything to do by hand.
+
+The version you're running is shown at the foot of every page, and in the
+`VERSION` file.
 
 If you changed the scripts in `deploy/`, reinstall the root-owned copies
 (step A8) before running them.
