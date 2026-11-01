@@ -109,6 +109,19 @@ class User extends Authenticatable implements PasskeyUser
         return $q->where('forward_only', false);
     }
 
+    /**
+     * The set-up key for someone who can't scan the QR code, in groups of four
+     * ("ABCD EFGH …"). Only while two-factor is being set up, never once confirmed.
+     */
+    public function twoFactorSetupKey(): ?string
+    {
+        if ($this->two_factor_secret === null || $this->two_factor_confirmed_at !== null) {
+            return null;
+        }
+
+        return trim(chunk_split(\Laravel\Fortify\Fortify::currentEncrypter()->decrypt($this->two_factor_secret), 4, ' '));
+    }
+
     public function hasTwoFactorEnabled(): bool
     {
         return $this->two_factor_secret !== null && $this->two_factor_confirmed_at !== null;

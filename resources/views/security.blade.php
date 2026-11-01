@@ -26,6 +26,16 @@
         @elseif (! $user->two_factor_confirmed_at)
             <p>Scan this code with your authenticator app, then enter the 6-digit code it shows.</p>
             <div class="qr">{!! $user->twoFactorQrCodeSvg() !!}</div>
+            @php($setupKey = $user->twoFactorSetupKey())
+            <details style="margin-top:12px">
+                <summary>Can't scan it?</summary>
+                <p class="small" style="margin:8px 0 4px">In your authenticator app, choose to enter a set-up key, then type or paste this key. Choose <strong>time-based</strong> if asked.</p>
+                <div class="row" style="gap:8px;flex-wrap:wrap">
+                    <code class="codes" style="margin:0;letter-spacing:.05em">{{ $setupKey }}</code>
+                    <button class="btn ghost small" type="button" data-copy="{{ str_replace(' ', '', $setupKey) }}">Copy key</button>
+                </div>
+                <p class="small muted" style="margin:6px 0 0">Account: {{ $user->email }}. On the phone your app is on? <a href="{{ $user->twoFactorQrCodeUrl() }}">Open it in your authenticator app</a>.</p>
+            </details>
             <form method="POST" action="{{ route('two-factor.confirm') }}" style="margin-top:16px;max-width:280px">
                 @csrf
                 <div class="field">

@@ -4,7 +4,8 @@
     <h1>Set up two-factor</h1>
     <p class="muted">Operator accounts always use two-factor. Scan this with your authenticator app, then enter the code it shows.</p>
     <div style="background:#fff;padding:8px;display:inline-block;border-radius:8px">{!! $qr !!}</div>
-    <p class="small">Can't scan it? Enter this key: <code>{{ $secret }}</code></p>
+    <p class="small">Can't scan it? Enter this key in your authenticator app (time-based): <code>{{ trim(chunk_split($secret, 4, ' ')) }}</code>
+        <button class="btn ghost small" type="button" data-copy="{{ $secret }}">Copy key</button></p>
     <form method="POST" action="{{ route('operator.two-factor.submit') }}">
         @csrf
         <div class="field">
