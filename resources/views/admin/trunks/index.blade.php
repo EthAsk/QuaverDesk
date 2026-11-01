@@ -29,8 +29,19 @@
                 @endforeach
                 </tbody>
             </table>
+            @if (! $trunks->contains('default_outbound', true))
+                <div class="flash {{ $emergencyTrunk ? 'warn' : 'bad' }}" style="margin-top:12px">
+                    No trunk is set for outgoing calls, so calls to phone numbers are off.
+                    @if ($emergencyTrunk)
+                        999 and 112 calls still go out on <strong>{{ $emergencyTrunk->name }}</strong>.
+                    @else
+                        No trunk is active, so 999 and 112 calls can't be made.
+                    @endif
+                </div>
+            @endif
             @if ($trunks->contains('default_outbound', true))
-                <form method="POST" action="{{ route('admin.trunks.clear-default') }}" style="margin-top:12px">
+                <form method="POST" action="{{ route('admin.trunks.clear-default') }}" style="margin-top:12px"
+                      data-confirm="Stop all outgoing calls to phone numbers? 999 and 112 will still work on an active trunk. To stop just some people calling out, set them to Colleagues only under Users instead.">
                     @csrf @method('DELETE')
                     <button class="btn ghost" type="submit">Stop outgoing calls to phone numbers</button>
                 </form>

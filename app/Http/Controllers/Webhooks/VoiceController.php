@@ -56,6 +56,7 @@ class VoiceController extends Controller
     public const MSG_NOT_IN_SERVICE = 'Sorry, this number is not in service.';
     public const MSG_PICK_UP_HOW = 'To pick up a parked call, dial star star and the slot number.';
     public const MSG_CANT_TRANSFER = 'Sorry, this call cannot be transferred.';
+    public const MSG_COLLEAGUES_ONLY = 'This phone can only call colleagues.';
     public const MSG_RECORD_SOUND = 'Record your message after the tone. Press hash when you have finished.';
     public const MSG_SOUND_SAVED = 'Saved. You will find it on the Sounds page, where you can rename it and choose where it plays.';
     public const MSG_SOUND_NOT_SAVED = 'Sorry, nothing was recorded. Hang up and try again.';
@@ -100,7 +101,7 @@ class VoiceController extends Controller
         }
 
         // The trunk an outside call will use, recorded for usage (and billing, on trunks we supply).
-        $trunk = in_array($decision->type, [DialDecision::NUMBER, DialDecision::EMERGENCY], true) ? SipTrunk::defaultOutbound() : null;
+        $trunk = $this->trunkFor($decision);
 
         $this->log($call, [
             'user_id' => $caller?->id,
@@ -148,7 +149,7 @@ class VoiceController extends Controller
         }
 
         $decision = $this->decide($by, $call->to());
-        $trunk = in_array($decision->type, [DialDecision::NUMBER, DialDecision::EMERGENCY], true) ? SipTrunk::defaultOutbound() : null;
+        $trunk = $this->trunkFor($decision);
         $slot = $decision->type === DialDecision::PARK ? $this->parking->slotFor($decision->target !== null ? (int) $decision->target : null) : null;
 
         if ($id = $call->callId()) {
@@ -537,7 +538,8 @@ class VoiceController extends Controller
     /**
      * What a person dialling (or transferring a call to) $to may reach. Colleagues
      * only: someone's identity (user-12, *12) from another company, or nobody, isn't
-     * dialled. Toll-fraud limits apply (never to emergency calls).
+     * dialled. People set to colleagues only can't reach outside numbers. Toll-fraud
+     * limits apply (never to emergency calls).
      */
     private function decide(User $caller, string $to): DialDecision
     {
@@ -553,8 +555,22 @@ class VoiceController extends Controller
         if ($decision->type === DialDecision::CLIENT && ! User::query()->whereKey((int) substr((string) $decision->target, 5))->exists()) {
             return DialDecision::reject('That extension is not in use.');
         }
+        // Colleagues only: no outside numbers, whether dialled or transferred to. 999 and 112 are emergency calls, never numbers.
+        if ($decision->type === DialDecision::NUMBER && $caller->isInternalOnly()) {
+            return DialDecision::reject(self::MSG_COLLEAGUES_ONLY);
+        }
 
         return $this->limits->refusal($caller, $decision) ?? $decision;
+    }
+
+    /** The trunk an outside call uses. 999/112 go out even when outgoing calls are off (see SipTrunk::forEmergency). */
+    private function trunkFor(DialDecision $decision): ?SipTrunk
+    {
+        return match ($decision->type) {
+            DialDecision::NUMBER => SipTrunk::defaultOutbound(),
+            DialDecision::EMERGENCY => SipTrunk::forEmergency(),
+            default => null,
+        };
     }
 
     private function dialOut(DialDecision $decision, ?SipTrunk $trunk, ?User $caller): CallScript
@@ -565,7 +581,7 @@ class VoiceController extends Controller
 
         return OutboundScript::fromDecision(
             $decision,
-            CallerId::default(),
+            $decision->type === DialDecision::EMERGENCY ? CallerId::forEmergency($trunk) : CallerId::default(),
             $trunk?->dialTrunk(),
             $recording,
             VoiceUrl::to('webhooks.voice.after-dial', ['next' => (string) Destination::hangup()]),

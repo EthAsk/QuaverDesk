@@ -165,6 +165,25 @@ class FreeSwitchServer implements VoiceServer
         }
     }
 
+    public function registrations(): array
+    {
+        $xml = $this->api(fn (EventSocket $esl) => $esl->api('sofia xmlstatus profile internal reg'));
+        $doc = @simplexml_load_string(trim($xml), options: LIBXML_NONET);
+        if ($doc === false) {
+            throw new RuntimeException('The voice server sent an unreadable list of phones.');
+        }
+
+        $out = [];
+        foreach ($doc->registrations->registration ?? [] as $r) {
+            $user = strstr((string) $r->user, '@', true) ?: (string) $r->{'sip-auth-user'};
+            // "Registered(TLS-NAT)(unknown) exp(…)": TLS for desk phones, WSS for browsers.
+            preg_match('/^Registered\(([A-Z]+)/', (string) $r->status, $t);
+            $out[$user] = ['ip' => (string) $r->{'network-ip'}, 'agent' => (string) $r->agent, 'transport' => $t[1] ?? ''];
+        }
+
+        return $out;
+    }
+
     /** @param callable(EventSocket): string $command */
     private function api(callable $command): string
     {

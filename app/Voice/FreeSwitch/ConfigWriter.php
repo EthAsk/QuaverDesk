@@ -130,8 +130,8 @@ class ConfigWriter
     {
         $out = [];
 
-        // Forward-only contacts have no softphone or desk phone to sign in.
-        foreach (User::query()->seated()->orderBy('id')->get() as $user) {
+        // Forward-only contacts have no softphone or desk phone to sign in; desk-phone-only users no softphone.
+        foreach (User::query()->seated()->where('phone_only', false)->orderBy('id')->get() as $user) {
             $id = $user->carrierIdentity();
             $out[$id] = $this->user($id, $user->sipSecret(), [
                 'effective_caller_id_name' => self::name($user->name),

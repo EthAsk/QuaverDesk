@@ -12,8 +12,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 /**
- * Moving people between a full account (sign-in, phones) and a forward-only
- * contact, and tidying up the voicemail boxes people leave behind.
+ * Moving people between a full account (sign-in, phones), desk phones only,
+ * and a forward-only contact, and tidying up the voicemail boxes people leave behind.
  */
 class UserTypes
 {
@@ -31,6 +31,7 @@ class UserTypes
         DB::transaction(function () use ($user) {
             $user->role = User::ROLE_USER;
             $user->forward_only = true;
+            $user->phone_only = false;
             $user->forceFill([
                 'two_factor_secret' => null, 'two_factor_recovery_codes' => null, 'two_factor_confirmed_at' => null,
                 'remember_token' => null,
@@ -57,11 +58,33 @@ class UserTypes
         });
     }
 
+    /**
+     * Desk phones only: their sign-in ends (sessions, passkeys, two-factor,
+     * reset links) and so does their softphone; their desk phones, ring groups
+     * and voicemail stay. Takes one of the plan's users (the caller checks
+     * there's room when they were forward-only).
+     */
+    public function makePhoneOnly(User $user): void
+    {
+        DB::transaction(function () use ($user) {
+            $user->role = User::ROLE_USER;
+            $user->forward_only = false;
+            $user->phone_only = true;
+            $user->forceFill(['two_factor_secret' => null, 'two_factor_recovery_codes' => null, 'two_factor_confirmed_at' => null, 'remember_token' => null])->save();
+            $user->rotateSipSecret();
+
+            DB::table('passkeys')->where('user_id', $user->id)->delete();
+            DB::table('sessions')->where('user_id', $user->id)->delete();
+            DB::table('password_reset_tokens')->where('email', $user->email)->delete();
+        });
+    }
+
     /** Back to a full account. Takes one of the plan's users; the caller checks there's room and sends the sign-in link. */
     public function giveSignIn(User $user, string $role): void
     {
         $user->role = $role;
         $user->forward_only = false;
+        $user->phone_only = false;
         $user->save();
     }
 

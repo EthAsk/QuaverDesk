@@ -90,7 +90,7 @@ class AppServiceProvider extends ServiceProvider
         $sync = fn () => SyncVoiceServer::dispatch()->afterCommit();
         User::created($sync);
         User::deleted($sync);
-        User::updated(fn (User $u) => $u->wasChanged(['name', 'extension', 'forward_only']) && $sync());
+        User::updated(fn (User $u) => $u->wasChanged(['name', 'extension', 'forward_only', 'phone_only']) && $sync());
         DeskPhone::saved($sync);
         DeskPhone::deleted($sync);
         SipTrunk::saved($sync);

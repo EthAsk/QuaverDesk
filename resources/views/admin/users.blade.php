@@ -3,7 +3,7 @@
 @section('content')
     <div class="page-head">
         <h1>Users</h1>
-        <p class="muted">{{ $seated }} of {{ $maxUsers }} users allowed on your plan. Forward-only contacts are free and don't count. Colleagues call each other by extension: 3 to 5 digits, starting with 2 to 8.</p>
+        <p class="muted">{{ $seated }} of {{ $maxUsers }} users allowed on your plan. Forward-only contacts are free and don't count; desk-phone-only users do. Colleagues call each other by extension: 3 to 5 digits, starting with 2 to 8.</p>
         @error('extension', 'extension')<div class="flash bad">{{ $message }}</div>@enderror
         @error('mobile', 'mobile')<div class="flash bad">{{ $message }}</div>@enderror
         @error('type', 'type')<div class="flash bad">{{ $message }}</div>@enderror
@@ -20,7 +20,7 @@
 
     <div class="card">
         <table>
-            <thead><tr><th>Name</th><th>Email</th><th>Extension</th><th>Role</th><th>2FA</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Email</th><th>Extension</th><th>Role</th><th>2FA</th><th>Calls</th><th></th></tr></thead>
             <tbody>
             @foreach ($users as $u)
                 <tr>
@@ -37,6 +37,8 @@
                     <td>
                         @if ($u->isForwardOnly())
                             <span class="pill">Forward only</span>
+                        @elseif ($u->isPhoneOnly())
+                            <span class="pill">Desk phones only</span>
                         @elseif ($u->isOwner())
                             <span class="pill">Owner</span>
                         @else
@@ -49,7 +51,29 @@
                             </form>
                         @endif
                     </td>
-                    <td>@if ($u->isForwardOnly()) <span class="muted">No sign-in</span> @else {!! $u->hasTwoFactorEnabled() ? '<span class="pill">On</span>' : '<span class="pill off">Off</span>' !!} @endif</td>
+                    <td>@unless ($u->canSignIn()) <span class="muted">No sign-in</span> @else {!! $u->hasTwoFactorEnabled() ? '<span class="pill">On</span>' : '<span class="pill off">Off</span>' !!} @endunless</td>
+                    <td>
+                        @unless ($u->isForwardOnly())
+                            <form method="POST" action="{{ route('admin.users.calling', $u) }}" class="row" style="margin-bottom:6px">
+                                @csrf @method('PATCH')
+                                <select name="internal_only" aria-label="Who {{ $u->name }} can call" data-autosubmit>
+                                    <option value="0" @selected(! $u->isInternalOnly())>Can call anyone</option>
+                                    <option value="1" @selected($u->isInternalOnly())>Colleagues only</option>
+                                </select>
+                            </form>
+                        @endunless
+                        @if ($u->mailbox_id)
+                            <form method="POST" action="{{ route('admin.users.voicemail', $u) }}" class="row">
+                                @csrf @method('PATCH')
+                                <select name="voicemail" aria-label="Voicemail for {{ $u->name }}" data-autosubmit>
+                                    <option value="1" @selected($u->hasVoicemail())>Voicemail on</option>
+                                    <option value="0" @selected(! $u->hasVoicemail())>Voicemail off</option>
+                                </select>
+                            </form>
+                        @else
+                            <span class="small muted">No voicemail box</span>
+                        @endif
+                    </td>
                     <td>
                         @if ($u->isForwardOnly())
                             <form method="POST" action="{{ route('admin.users.mobile', $u) }}" class="rename" style="margin-bottom:6px">
@@ -67,16 +91,16 @@
                             @endif
                         @endif
                         <div class="row">
-                            @unless ($u->is(auth()->user()) || $u->isForwardOnly())
+                            @unless ($u->is(auth()->user()) || ! $u->canSignIn())
                                 <form method="POST" action="{{ route('admin.users.invite', $u) }}" data-confirm="Email {{ $u->name }} a link to set a new password?">
                                     @csrf
                                     <button class="btn ghost small" type="submit">Email sign-in link</button>
                                 </form>
                             @endunless
                             @unless ($u->isOwner() || $u->is(auth()->user()))
-                                @if ($u->isForwardOnly())
+                                @unless ($u->canSignIn())
                                     <form method="POST" action="{{ route('admin.users.type', $u) }}" class="row"
-                                          data-confirm="Give {{ $u->name }} a sign-in? They'll count as one of your plan's users and be emailed a link to set a password.">
+                                          data-confirm="Give {{ $u->name }} a sign-in?{{ $u->isForwardOnly() ? " They'll count as one of your plan's users." : '' }} They'll be emailed a link to set a password.">
                                         @csrf @method('PATCH')
                                         <select name="type" aria-label="Role for {{ $u->name }} with a sign-in">
                                             <option value="user">User</option>
@@ -84,14 +108,23 @@
                                         </select>
                                         <button class="btn ghost small" type="submit">Give a sign-in</button>
                                     </form>
-                                @else
+                                @endunless
+                                @unless ($u->isPhoneOnly())
+                                    <form method="POST" action="{{ route('admin.users.type', $u) }}"
+                                          data-confirm="Make {{ $u->name }} desk phones only? {{ $u->isForwardOnly() ? "They'll count as one of your plan's users. Add their phone under Phones and apps." : "They'll be signed out everywhere and lose their softphone and passkeys. Their desk phones, ring groups and voicemail stay." }}">
+                                        @csrf @method('PATCH')
+                                        <input type="hidden" name="type" value="phone_only">
+                                        <button class="btn ghost small" type="submit">Make desk phones only</button>
+                                    </form>
+                                @endunless
+                                @unless ($u->isForwardOnly())
                                     <form method="POST" action="{{ route('admin.users.type', $u) }}"
                                           data-confirm="Make {{ $u->name }} forward-only? They'll be signed out everywhere, their desk phones and passkeys removed, and they'll leave their ring groups. Calls will ring their confirmed mobile or go to voicemail.">
                                         @csrf @method('PATCH')
                                         <input type="hidden" name="type" value="forward_only">
                                         <button class="btn ghost small" type="submit">Make forward-only</button>
                                     </form>
-                                @endif
+                                @endunless
                                 <form method="POST" action="{{ route('admin.users.destroy', $u) }}" data-confirm="Remove {{ $u->name }}? Their own voicemail box and its messages are deleted too.">
                                     @csrf @method('DELETE')
                                     <button class="btn ghost small" type="submit">Remove</button>
@@ -132,10 +165,16 @@
                 <div class="field">
                     <label for="role">Role</label>
                     <select id="role" name="role">
-                        <option value="user">User</option>
-                        <option value="admin">Admin</option>
+                        <option value="user" @selected(old('role') === 'user')>User</option>
+                        <option value="admin" @selected(old('role') === 'admin')>Admin</option>
+                        <option value="phone_only" @selected(old('role') === 'phone_only')>Desk phones only (no sign-in)</option>
                     </select>
+                    <div class="small muted">Desk phones only is for a reception, lobby or hall phone: no sign-in or softphone, and no email is sent. Their calls ring the desk phones you add for them.</div>
                 </div>
+                <label class="check">
+                    <input type="checkbox" name="internal_only" value="1" @checked(old('internal_only'))>
+                    <span>Colleagues only: can call extensions and 999, but no outside numbers.</span>
+                </label>
                 @if ($full)
                     <label class="check">
                         <input type="checkbox" name="upgrade" value="1" required>

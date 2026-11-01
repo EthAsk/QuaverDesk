@@ -48,6 +48,9 @@ class User extends Authenticatable implements PasskeyUser
             'mobile_verified_at' => 'datetime',
             'follow_me_delay' => 'integer',
             'forward_only' => 'boolean',
+            'phone_only' => 'boolean',
+            'internal_only' => 'boolean',
+            'voicemail' => 'boolean',
             'two_factor_confirmed_at' => 'datetime',
             'password' => 'hashed',
             'sip_secret' => 'encrypted',
@@ -71,6 +74,33 @@ class User extends Authenticatable implements PasskeyUser
     public function isForwardOnly(): bool
     {
         return (bool) $this->forward_only;
+    }
+
+    /**
+     * Desk phones only (a reception, lobby or hall phone, say): no sign-in or
+     * softphone, so calls ring their desk phones. Counts as one of the plan's users.
+     */
+    public function isPhoneOnly(): bool
+    {
+        return (bool) $this->phone_only;
+    }
+
+    /** Can sign in to the web app (and so has a softphone): not forward-only or desk phones only. */
+    public function canSignIn(): bool
+    {
+        return ! $this->isForwardOnly() && ! $this->isPhoneOnly();
+    }
+
+    /** Their phones may call colleagues (and 999/112) but no outside numbers. */
+    public function isInternalOnly(): bool
+    {
+        return (bool) $this->internal_only;
+    }
+
+    /** Unanswered calls go to their voicemail box (when they have one). Off: the call ends. */
+    public function hasVoicemail(): bool
+    {
+        return $this->voicemail !== false;
     }
 
     /** People who count against the plan's users (everyone but forward-only contacts). */

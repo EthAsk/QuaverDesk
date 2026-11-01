@@ -23,11 +23,11 @@ class FortifyServiceProvider extends ServiceProvider
         Fortify::resetUserPasswordsUsing(ResetUserPassword::class);
         Fortify::updateUserPasswordsUsing(UpdateUserPassword::class);
 
-        // Forward-only contacts have no sign-in (see EnsureCanSignIn).
+        // Forward-only contacts and desk-phone-only users have no sign-in (see EnsureCanSignIn).
         Fortify::authenticateUsing(function (Request $request) {
             $user = User::query()->where('email', Str::lower((string) $request->input(Fortify::username())))->first();
 
-            return $user && ! $user->isForwardOnly() && Hash::check((string) $request->input('password'), $user->password) ? $user : null;
+            return $user && $user->canSignIn() && Hash::check((string) $request->input('password'), $user->password) ? $user : null;
         });
 
         Fortify::loginView(fn () => view('auth.login', ['canRegister' => config('voip.web_setup') && ! config('tenancy.enabled') && ! User::query()->exists()]));

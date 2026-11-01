@@ -23,9 +23,16 @@ class DeskPhoneController extends Controller
     {
     }
 
-    public function index(): View
+    public function index(VoiceServer $voice): View
     {
+        try {
+            $online = DeskPhone::service() ? $voice->registrations() : null;
+        } catch (RuntimeException) {
+            $online = null; // shown as unknown
+        }
+
         return view('admin.desk-phones', [
+            'online' => $online,
             'service' => DeskPhone::service(),
             'phones' => DeskPhone::query()->with('user:id,name')->orderBy('label')->get(),
             'users' => User::query()->seated()->orderBy('name')->get(['id', 'name', 'extension']),

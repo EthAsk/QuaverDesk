@@ -48,9 +48,10 @@ class UserController extends Controller
             // Unique across every company, not just this one: sign-in and password
             // resets find a person by email alone.
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
-            'role' => ['required', Rule::in([User::ROLE_ADMIN, User::ROLE_USER])],
+            'role' => ['required', Rule::in([User::ROLE_ADMIN, User::ROLE_USER, self::PHONE_ONLY])],
             'extension' => ['nullable', ...self::extensionRules()],
         ], self::EXTENSION_MESSAGES);
+        $phoneOnly = $data['role'] === self::PHONE_ONLY;
 
         $max = $licences->current()->maxUsers();
 
@@ -64,14 +65,16 @@ class UserController extends Controller
             }
         }
 
-        $user = DB::transaction(function () use ($data, $max) {
+        $user = DB::transaction(function () use ($data, $max, $phoneOnly, $request) {
             if (User::query()->seated()->lockForUpdate()->count() >= $max) {
                 return null;
             }
 
-            // Nobody knows this password: the person sets their own from the emailed link.
+            // Nobody knows this password: the person sets their own from the emailed link (desk-phone-only users never do).
             $user = new User(['name' => $data['name'], 'email' => strtolower($data['email']), 'password' => Str::password(32)]);
-            $user->role = $data['role'];
+            $user->role = $phoneOnly ? User::ROLE_USER : $data['role'];
+            $user->phone_only = $phoneOnly;
+            $user->internal_only = $request->boolean('internal_only');
             $user->extension = $data['extension'] ?? null; // blank: the next free one
             $user->save();
 
@@ -82,6 +85,10 @@ class UserController extends Controller
             return back()->withErrors(['email' => "Your plan allows {$max} users. Upgrade or remove a user first."]);
         }
 
+        if ($phoneOnly) {
+            return back()->with('status', "{$user->name} was added for desk phones only, on extension {$user->extension}. Add their phone under Phones and apps.");
+        }
+
         $link = Invites::link($user);
         Mail::to($user)->queue(new UserInvited($user, $link, $request->user()->name));
 
@@ -90,6 +97,7 @@ class UserController extends Controller
     }
 
     private const FORWARD_ONLY = 'forward_only';
+    private const PHONE_ONLY = 'phone_only';
 
     /**
      * A forward-only contact: no sign-in or phones, and free. Calls ring their
@@ -173,14 +181,25 @@ class UserController extends Controller
     }
 
     /**
-     * Switch someone between a full account and a forward-only contact. Going
-     * forward-only ends their sign-in and removes their phones; getting a
-     * sign-in back takes one of the plan's users and emails them a link.
+     * Switch someone between a full account, desk phones only and a
+     * forward-only contact. Desk phones only ends their sign-in and softphone;
+     * forward-only also removes their phones and is free. Getting a sign-in
+     * back emails them a link; leaving forward-only takes one of the plan's users.
      */
     public function type(Request $request, User $user, UserTypes $types, LicenceManager $licences, MobileConfirmation $confirmation): RedirectResponse
     {
         abort_if($user->isOwner() || $user->is($request->user()), 403);
-        $data = $request->validate(['type' => ['required', Rule::in([self::FORWARD_ONLY, User::ROLE_USER, User::ROLE_ADMIN])]]);
+        $data = $request->validate(['type' => ['required', Rule::in([self::FORWARD_ONLY, self::PHONE_ONLY, User::ROLE_USER, User::ROLE_ADMIN])]]);
+
+        if ($data['type'] === self::PHONE_ONLY) {
+            abort_if($user->isPhoneOnly(), 404);
+            // Leaving forward-only takes one of the plan's users.
+            if (! $this->withSeat($licences, ! $user->isForwardOnly(), fn () => $types->makePhoneOnly($user))) {
+                return back()->withErrors(['type' => 'Your plan allows '.$licences->current()->maxUsers().' users. Upgrade or remove a user first.'], 'type');
+            }
+
+            return back()->with('status', "{$user->name} is now desk phones only: signed out, with no softphone. Calls ring their desk phones.");
+        }
 
         if ($data['type'] === self::FORWARD_ONLY) {
             abort_if($user->isForwardOnly(), 404);
@@ -192,18 +211,10 @@ class UserController extends Controller
                 : $this->confirming($user, $confirmation, $done));
         }
 
-        abort_unless($user->isForwardOnly(), 404);
-        $max = $licences->current()->maxUsers();
-        $added = DB::transaction(function () use ($user, $types, $data, $max) {
-            if (User::query()->seated()->lockForUpdate()->count() >= $max) {
-                return false;
-            }
-            $types->giveSignIn($user, $data['type']);
-
-            return true;
-        });
-        if (! $added) {
-            return back()->withErrors(['type' => "Your plan allows {$max} users. Upgrade or remove a user first."], 'type');
+        abort_if($user->canSignIn(), 404);
+        // Desk-phone-only users already count as one of the plan's users.
+        if (! $this->withSeat($licences, $user->isPhoneOnly(), fn () => $types->giveSignIn($user, $data['type']))) {
+            return back()->withErrors(['type' => 'Your plan allows '.$licences->current()->maxUsers().' users. Upgrade or remove a user first.'], 'type');
         }
 
         $link = Invites::link($user);
@@ -212,10 +223,50 @@ class UserController extends Controller
         return back()->with('invited', ['email' => $user->email, 'link' => $link]);
     }
 
+    /**
+     * Runs $change if it fits the plan: always when the person already counts
+     * as one of its users, otherwise only if there's room (checked under a lock,
+     * in the same transaction). False if the plan is full.
+     */
+    private function withSeat(LicenceManager $licences, bool $alreadySeated, \Closure $change): bool
+    {
+        return DB::transaction(function () use ($licences, $alreadySeated, $change) {
+            if (! $alreadySeated && User::query()->seated()->lockForUpdate()->count() >= $licences->current()->maxUsers()) {
+                return false;
+            }
+            $change();
+
+            return true;
+        });
+    }
+
+    /** Colleagues only: their phones may call colleagues and 999/112, but no outside numbers. */
+    public function calling(Request $request, User $user): RedirectResponse
+    {
+        abort_if($user->isForwardOnly(), 404);
+        $user->forceFill(['internal_only' => $request->boolean('internal_only')])->save();
+
+        return back()->with('status', $user->internal_only
+            ? "{$user->name} can now only call colleagues (and 999)."
+            : "{$user->name} can call outside numbers again, within your calling rules.");
+    }
+
+    /** Voicemail on or off. Off: unanswered calls end. Their box and its messages stay, ready for when it's back on. */
+    public function voicemail(Request $request, User $user): RedirectResponse
+    {
+        $user->forceFill(['voicemail' => $request->boolean('voicemail')])->save();
+
+        return back()->with('status', match (true) {
+            $user->voicemail => "{$user->name}'s voicemail is on.",
+            $user->isForwardOnly() && ! $user->followsMe() => "{$user->name}'s voicemail is off. They have no confirmed mobile either, so callers hear that they can't be reached.",
+            default => "{$user->name}'s voicemail is off: calls they don't answer will end.",
+        });
+    }
+
     /** Email someone a fresh link to set their password (lost invite, forgotten password). Never shown here. */
     public function invite(Request $request, User $user): RedirectResponse
     {
-        abort_if($user->isForwardOnly(), 404);
+        abort_unless($user->canSignIn(), 404);
 
         Mail::to($user)->queue(new UserInvited($user, Invites::link($user), $request->user()->name));
 
@@ -253,7 +304,7 @@ class UserController extends Controller
     public function update(Request $request, User $user): RedirectResponse
     {
         abort_if($user->isOwner(), 403, 'The owner role cannot be changed here.');
-        abort_if($user->isForwardOnly(), 404);
+        abort_unless($user->canSignIn(), 404);
 
         $data = $request->validate(['role' => ['required', Rule::in([User::ROLE_ADMIN, User::ROLE_USER])]]);
         $user->role = $data['role'];

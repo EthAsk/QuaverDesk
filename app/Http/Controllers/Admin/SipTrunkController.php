@@ -23,6 +23,7 @@ class SipTrunkController extends Controller
         return view('admin.trunks.index', [
             'trunks' => SipTrunk::query()->withCount('numbers')->orderBy('name')->get(),
             'providers' => config('sip_providers'),
+            'emergencyTrunk' => SipTrunk::forEmergency(),
         ]);
     }
 
@@ -114,7 +115,10 @@ class SipTrunkController extends Controller
     {
         SipTrunk::query()->update(['default_outbound' => false]);
 
-        return back()->with('status', 'No trunk is set for outgoing calls, so calls to phone numbers are off.');
+        $emergency = SipTrunk::forEmergency();
+
+        return back()->with('status', 'No trunk is set for outgoing calls, so calls to phone numbers are off. '
+            .($emergency ? "999 and 112 calls still go out on {$emergency->name}." : 'There is no active trunk, so 999 and 112 calls can\'t be made.'));
     }
 
     public function destroy(SipTrunk $trunk): RedirectResponse

@@ -58,4 +58,13 @@ interface VoiceServer
      * @throws \RuntimeException when the voice server can't be asked
      */
     public function resyncPhone(string $sipUsername): void;
+
+    /**
+     * Phones and softphones signed in now, by SIP username: where from and what they are.
+     *
+     * @return array<string, array{ip: string, agent: string, transport: string}>
+     *
+     * @throws \RuntimeException when the voice server can't be asked
+     */
+    public function registrations(): array;
 }

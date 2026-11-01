@@ -76,14 +76,15 @@ class DatabaseRoutingDirectory implements RoutingDirectory
         ));
     }
 
-    /** Softphone always; desk phones and mobile apps too on Plus once the desk phone service is set up. */
+    /** Softphone (unless desk phones only); desk phones and mobile apps too on Plus once the desk phone service is set up. */
     private function targetsFor(User $user): array
     {
         if ($user->isForwardOnly()) {
             return [];
         }
 
-        $targets = [DialTarget::client($user->carrierIdentity())];
+        // Desk-phone-only users have no softphone: just their desk phones.
+        $targets = $user->isPhoneOnly() ? [] : [DialTarget::client($user->carrierIdentity())];
 
         if ($this->licences->allows(Feature::DeskPhones) && DeskPhone::service()) {
             foreach ($user->deskPhones as $phone) {
@@ -96,9 +97,10 @@ class DatabaseRoutingDirectory implements RoutingDirectory
         return $targets;
     }
 
+    /** Their voicemail box, unless an admin turned their voicemail off (the box and its messages stay). */
     public function userMailbox(int $userId): ?int
     {
-        return User::query()->whereKey($userId)->value('mailbox_id');
+        return User::query()->whereKey($userId)->where('voicemail', true)->value('mailbox_id');
     }
 
     public function mailbox(int $id): ?MailboxConfig

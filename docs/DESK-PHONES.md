@@ -176,6 +176,18 @@ If you change the app key (`APP_KEY`), everyone's address changes. Phones set
 up automatically get the new ones at their next check. Phones set up by hand
 need re-entering.
 
+## Phones without a person, and phones that can't call out
+
+For a reception, lobby or hall phone, add a user and choose **Desk phones only (no sign-in)** as the role, then add their phone. They have an extension, ring groups and voicemail like anyone else, but no sign-in, softphone or invite email. They count as one of your plan's users. Under **Admin → Users** you can switch anyone between a full account, desk phones only and forward-only.
+
+To stop a person's phones calling outside numbers, set **Calls** to **Colleagues only** on the Users page. They can still call any extension in the company, and 999 and 112 always work. This applies to transfers too, and to their softphone as well as their desk phones.
+
+Use Colleagues only to block outside calls, not **Stop outgoing calls to phone numbers** on the Trunks page. If no trunk is set for outgoing calls, 999 and 112 still go out on any active trunk (the one with most of your numbers first), showing one of your numbers. The Trunks page warns you if no trunk is active, because then 999 can't be made.
+
+**Voicemail on / off**, also on the Users page, controls where calls they don't answer go. With voicemail off the call just ends. Their voicemail box and any messages in it are kept, so turning it back on puts everything back as it was.
+
+**Admin → Phones and apps** shows whether each phone is online. When it is, you also see the address it signs in from and the phone model. If the voice server can't be reached, the status shows as *Unknown*.
+
 ## Making changes
 
 | To | Do |

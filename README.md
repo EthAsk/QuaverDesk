@@ -228,6 +228,30 @@ their desk phones, passkeys, two-factor and ring group places; **Give a
 sign-in** turns a contact back into a user (it takes one of the plan's users)
 and emails them a link to set a password.
 
+### Desk-phone-only users
+
+For a reception, lobby or hall phone, add a user with the role **Desk phones
+only (no sign-in)**, then add their phone under **Phones and apps**. They have
+an extension, ring groups and voicemail, but no sign-in, softphone or invite
+email, and they count as one of the plan's users. **Make desk phones only** on
+an existing user signs them out everywhere and ends their softphone, passkeys
+and two-factor; their desk phones, ring groups and voicemail stay. **Phones and
+apps** shows whether each phone is online, with the address it signs in from
+and its model.
+
+### Who can call out, and voicemail
+
+On **Admin → Users**, **Calls** can be set to **Colleagues only**. That
+person's phones can then call any extension, but no outside numbers, whether
+dialled or transferred to. 999 and 112 always work. Use this rather than
+**Stop outgoing calls to phone numbers** on the Trunks page. If no trunk is set
+for outgoing calls, 999 and 112 still go out on any active trunk, showing one
+of the company's numbers. The Trunks page warns you when no trunk is active,
+because then 999 can't be made.
+
+**Voicemail on / off** per user: off, calls they don't answer just end. Their
+box and its messages are kept, so turning it back on restores everything.
+
 Removing anyone also deletes any voicemail box that no longer reaches anyone
 (no members and no extra email addresses), with its messages and a greeting
 recorded on the phone, so a departed person's voicemail isn't kept. Shared

@@ -105,4 +105,15 @@ class SipTrunk extends Model
     {
         return static::query()->where('default_outbound', true)->where('status', 'active')->first();
     }
+
+    /**
+     * The trunk a 999/112 call goes out on. Turning off outgoing calls (no
+     * default trunk) never stops emergency calls: they use any active trunk,
+     * the one with the most of the company's numbers first.
+     */
+    public static function forEmergency(): ?self
+    {
+        return static::defaultOutbound()
+            ?? static::query()->where('status', 'active')->withCount('numbers')->orderByDesc('numbers_count')->orderBy('id')->first();
+    }
 }

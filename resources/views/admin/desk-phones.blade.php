@@ -23,11 +23,21 @@
                 <p class="muted">No phones yet.</p>
             @else
                 <table>
-                    <thead><tr><th>Phone</th><th>Person</th><th>Username</th><th>Signs in from</th><th></th></tr></thead>
+                    <thead><tr><th>Phone</th><th>Status</th><th>Person</th><th>Username</th><th>Signs in from</th><th></th></tr></thead>
                     <tbody>
                     @foreach ($phones as $p)
                         <tr>
                             <td>{{ $p->label }}</td>
+                            <td>
+                                @if ($online === null)
+                                    <span class="muted small">Unknown</span>
+                                @elseif ($reg = $online[$p->sip_username] ?? null)
+                                    <span class="pill" title="{{ $reg['agent'] }}">Online</span>
+                                    <div class="small muted">{{ $reg['ip'] }}{{ $reg['agent'] ? ' · '.\Illuminate\Support\Str::limit($reg['agent'], 28) : '' }}</div>
+                                @else
+                                    <span class="pill off">Offline</span>
+                                @endif
+                            </td>
                             <td>{{ $p->user?->name }}</td>
                             <td><code>{{ $p->sip_username }}</code></td>
                             <td>
@@ -53,7 +63,7 @@
                             </td>
                         </tr>
                         <tr>
-                            <td colspan="5" class="small" style="border-top:0;padding-top:0">
+                            <td colspan="6" class="small" style="border-top:0;padding-top:0">
                                 <div class="row" style="flex-wrap:wrap;gap:8px">
                                     <form method="POST" action="{{ route('admin.desk-phones.provisioning', $p) }}" class="row">
                                         @csrf @method('PATCH')
@@ -134,7 +144,7 @@
                         </tr>
                         @if ($reveal === $p->id)
                             <tr>
-                                <td colspan="5">
+                                <td colspan="6">
                                     <div class="flash warn" style="margin:0">
                                         <strong>Settings for {{ $p->label }}</strong> — enter these on the handset's account page. Keep the password private.
                                         <table class="copy" style="margin-top:8px">

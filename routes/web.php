@@ -83,6 +83,8 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
             Route::patch('/users/{user}/extension', [UserController::class, 'extension'])->name('users.extension');
             Route::patch('/users/{user}/mobile', [UserController::class, 'mobile'])->name('users.mobile');
             Route::patch('/users/{user}/type', [UserController::class, 'type'])->name('users.type');
+            Route::patch('/users/{user}/calling', [UserController::class, 'calling'])->name('users.calling');
+            Route::patch('/users/{user}/voicemail', [UserController::class, 'voicemail'])->name('users.voicemail');
             Route::post('/users/{user}/confirm-mobile', [UserController::class, 'confirmMobile'])->middleware('throttle:5,1')->name('users.confirm-mobile');
             Route::delete('/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
             Route::post('/users/{user}/invite', [UserController::class, 'invite'])->middleware('throttle:10,1')->name('users.invite');
