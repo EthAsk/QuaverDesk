@@ -14,9 +14,11 @@ final class Destination
     public const RING_GROUP = 'ring_group';
     public const IVR = 'ivr';
     public const VOICEMAIL = 'voicemail';
+    public const QUEUE = 'queue';
     public const HANGUP = 'hangup';
+    public const RECEPTIONIST = 'receptionist';
 
-    public const TYPES = [self::USER, self::RING_GROUP, self::IVR, self::VOICEMAIL, self::HANGUP];
+    public const TYPES = [self::USER, self::RING_GROUP, self::IVR, self::VOICEMAIL, self::QUEUE, self::HANGUP, self::RECEPTIONIST];
 
     public function __construct(
         public readonly string $type,
@@ -41,7 +43,7 @@ final class Destination
 
     public static function parse(?string $value): ?self
     {
-        if ($value === null || ! preg_match('/^(user|ring_group|ivr|voicemail|hangup)(?::(\d{1,9}))?(?::(\d{1,3}))?$/', $value, $m)) {
+        if ($value === null || ! preg_match('/^(user|ring_group|ivr|voicemail|queue|hangup|receptionist)(?::(\d{1,9}))?(?::(\d{1,3}))?$/', $value, $m)) {
             return null;
         }
 

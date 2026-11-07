@@ -4,11 +4,14 @@ namespace App\Tenancy;
 
 use App\Models\Acknowledgement;
 use App\Models\Call;
+use App\Models\CallQueue;
 use App\Models\DeskPhone;
 use App\Models\DeskPhoneEvent;
 use App\Models\IvrMenu;
+use App\Models\Receptionist;
 use App\Models\Mailbox;
 use App\Models\PhoneNumber;
+use App\Models\QueueCaller;
 use App\Models\Recording;
 use App\Models\RingGroup;
 use App\Models\Setting;
@@ -36,8 +39,8 @@ class TenantData
      * @var list<class-string<Model>>
      */
     private const MODELS = [
-        DeskPhoneEvent::class, Recording::class, Call::class, Acknowledgement::class, DeskPhone::class, PhoneNumber::class,
-        IvrMenu::class, RingGroup::class, Mailbox::class, Sound::class, SipTrunk::class, Setting::class, User::class,
+        DeskPhoneEvent::class, QueueCaller::class, Recording::class, Call::class, Acknowledgement::class, DeskPhone::class, PhoneNumber::class,
+        Receptionist::class, IvrMenu::class, RingGroup::class, CallQueue::class, Mailbox::class, Sound::class, SipTrunk::class, Setting::class, User::class,
     ];
 
     /** Never exported: passwords and keys that would let someone sign in or call as the company. */
@@ -77,6 +80,7 @@ class TenantData
 
             $this->exportPivot($zip, 'ring_group_user', 'ring_group_id', RingGroup::class);
             $this->exportPivot($zip, 'mailbox_user', 'mailbox_id', Mailbox::class);
+            $this->exportPivot($zip, 'call_queue_user', 'call_queue_id', CallQueue::class);
 
             foreach (Recording::query()->whereNotNull('path')->lazyById() as $recording) {
                 if (($audio = $this->recordings->get($recording)) !== null) {

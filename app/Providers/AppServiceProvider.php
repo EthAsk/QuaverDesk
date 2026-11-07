@@ -12,6 +12,7 @@ use App\Jobs\WarmPrompts;
 use App\Models\DeskPhone;
 use App\Models\SipTrunk;
 use App\Models\User;
+use App\Domain\Routing\CallbackUrls;
 use App\Domain\Routing\InboundRouter;
 use App\Support\DatabaseRoutingDirectory;
 use App\Support\LicenceManager;
@@ -60,6 +61,8 @@ class AppServiceProvider extends ServiceProvider
             $app->make(DatabaseRoutingDirectory::class),
             new RouteCallbackUrls(),
         ));
+        $this->app->bind(CallbackUrls::class, RouteCallbackUrls::class);
+        $this->app->bind(\App\Domain\Routing\RoutingDirectory::class, DatabaseRoutingDirectory::class);
 
         $this->app->bind(Voices::class, fn () => new Voices(config('voip.tts')));
         $this->app->bind(Prompts::class, fn ($app) => new Prompts($app->make(Voices::class)->config()));
@@ -135,6 +138,8 @@ class AppServiceProvider extends ServiceProvider
 
         Passkeys::usePasskeyModel(Passkey::class);
 
+        // Partner apply and sign-in forms (licence server). Defined here, not in the route file, so it survives route:cache.
+        RateLimiter::for('partner-forms', fn (Request $request) => Limit::perMinute(5)->by('partners:'.$request->route()?->getName().'|'.$request->ip()));
         RateLimiter::for('passkeys', fn (Request $request) => Limit::perMinute(10)->by($request->user()?->id ?: app(Tenancy::class)->id().'|'.$request->ip()));
         // Both operator sign-in steps together, per address.
         RateLimiter::for('operator-auth', fn (Request $request) => Limit::perMinute(10)->by('operator:'.$request->ip()));
@@ -152,6 +157,9 @@ class AppServiceProvider extends ServiceProvider
 
         // @feature('ai_summaries') … @else … @endfeature
         Blade::if('feature', fn (string $feature) => app(LicenceManager::class)->allows(Feature::from($feature)));
+        // A partner's renamed install says "Powered by QuaverDesk" unless their licence pays for own branding.
+        Blade::if('poweredby', fn () => ! app(LicenceManager::class)->hosted()
+            && app(LicenceManager::class)->current()->showsPoweredBy((string) config('app.name')));
     }
 
     /** Queued jobs remember which company they were for, and run as it. */

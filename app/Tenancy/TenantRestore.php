@@ -5,10 +5,13 @@ namespace App\Tenancy;
 use App\Domain\Routing\Destination;
 use App\Models\Acknowledgement;
 use App\Models\Call;
+use App\Models\CallQueue;
 use App\Models\DeskPhone;
 use App\Models\IvrMenu;
+use App\Models\Receptionist;
 use App\Models\Mailbox;
 use App\Models\PhoneNumber;
+use App\Models\QueueCaller;
 use App\Models\Recording;
 use App\Models\RingGroup;
 use App\Models\Setting;
@@ -41,8 +44,8 @@ class TenantRestore
     /** The tables an export holds, parents first, and the model that owns each. */
     private const MODELS = [
         'sounds' => Sound::class, 'sip_trunks' => SipTrunk::class, 'mailboxes' => Mailbox::class, 'users' => User::class,
-        'ring_groups' => RingGroup::class, 'ivr_menus' => IvrMenu::class, 'phone_numbers' => PhoneNumber::class,
-        'desk_phones' => DeskPhone::class, 'calls' => Call::class, 'recordings' => Recording::class,
+        'ring_groups' => RingGroup::class, 'ivr_menus' => IvrMenu::class, 'call_queues' => CallQueue::class, 'receptionists' => Receptionist::class, 'phone_numbers' => PhoneNumber::class,
+        'desk_phones' => DeskPhone::class, 'calls' => Call::class, 'queue_callers' => QueueCaller::class, 'recordings' => Recording::class,
         'acknowledgements' => Acknowledgement::class, 'settings' => Setting::class,
     ];
 
@@ -50,9 +53,12 @@ class TenantRestore
     private const REFERENCES = [
         'users' => ['mailbox_id' => 'mailboxes'],
         'ivr_menus' => ['greeting_sound_id' => 'sounds'],
+        'receptionists' => ['mailbox_id' => 'mailboxes'],
         'mailboxes' => ['greeting_sound_id' => 'sounds'],
         'phone_numbers' => ['sip_trunk_id' => 'sip_trunks'],
-        'desk_phones' => ['user_id' => 'users'],
+        'call_queues' => ['hold_sound_id' => 'sounds'],
+        'queue_callers' => ['call_queue_id' => 'call_queues'],
+        'desk_phones' => ['user_id' => 'users', 'base_id' => 'desk_phones'], // bases come before their handsets (lower ids)
         'calls' => ['user_id' => 'users', 'sip_trunk_id' => 'sip_trunks'],
         'recordings' => ['call_id' => 'calls', 'mailbox_id' => 'mailboxes'],
         'acknowledgements' => ['user_id' => 'users'],
@@ -60,7 +66,11 @@ class TenantRestore
 
     /** Destination types and the table their id is in. */
     private const DESTINATIONS = [Destination::USER => 'users', Destination::RING_GROUP => 'ring_groups',
-        Destination::IVR => 'ivr_menus', Destination::VOICEMAIL => 'mailboxes'];
+        Destination::IVR => 'ivr_menus', Destination::VOICEMAIL => 'mailboxes', Destination::QUEUE => 'call_queues',
+        Destination::RECEPTIONIST => 'receptionists'];
+
+    /** Added after the first exports: an export without them restores without them. */
+    private const OPTIONAL = ['call_queues', 'queue_callers', 'call_queue_user', 'receptionists'];
 
     /** Never restored: whatever the file says, these are recreated or left empty. */
     private const NEVER = ['id', 'tenant_id', 'password', 'remember_token', 'two_factor_secret', 'two_factor_recovery_codes',
@@ -96,7 +106,8 @@ class TenantRestore
             foreach (array_keys(self::MODELS) as $table) {
                 $data[$table] = $this->json($zip, "data/{$table}.json");
             }
-            $pivots = ['ring_group_user' => $this->json($zip, 'data/ring_group_user.json'), 'mailbox_user' => $this->json($zip, 'data/mailbox_user.json')];
+            $pivots = ['ring_group_user' => $this->json($zip, 'data/ring_group_user.json'), 'mailbox_user' => $this->json($zip, 'data/mailbox_user.json'),
+                'call_queue_user' => $this->json($zip, 'data/call_queue_user.json')];
             $this->checkNoClashes($data);
 
             $tenant = DB::transaction(function () use ($slug, $name, $company, $data, $pivots) {
@@ -164,7 +175,7 @@ class TenantRestore
             'sip_trunks' => $record->forceFill(['gateway_token' => bin2hex(random_bytes(6)), 'register' => false,
                 'last_error' => $record->auth_username ? 'Restored from a backup without its password. Remove this trunk and add it again.' : null]),
             'desk_phones' => $record->forceFill(['sip_username' => 'u'.$record->user_id.'-'.bin2hex(random_bytes(3)),
-                'sip_password' => Str::password(20, symbols: false)]),
+                'sip_password' => Str::password(20, symbols: false), 'handset' => $record->base_id ? $record->handset : null]),
             'sounds' => $record->forceFill(['file' => bin2hex(random_bytes(20))]),
             'recordings' => $record->forceFill(['status' => ($row['status'] ?? null) === 'stored' ? 'deleted' : ($row['status'] ?? 'deleted')]),
             'settings' => $record->key === 'sounds.hold_music'
@@ -175,6 +186,9 @@ class TenantRestore
 
         // A desk phone or call whose person wasn't in the export is left out.
         if (in_array($table, ['desk_phones', 'acknowledgements'], true) && ! $record->user_id) {
+            return;
+        }
+        if ($table === 'queue_callers' && ! $record->call_queue_id) {
             return;
         }
 
@@ -200,6 +214,14 @@ class TenantRestore
         foreach (RingGroup::query()->get() as $group) {
             $group->forceFill(['fallback' => $map($group->fallback)])->saveQuietly();
         }
+        foreach (CallQueue::query()->get() as $queue) {
+            $queue->forceFill(['overflow' => $map($queue->overflow)])->saveQuietly();
+        }
+        foreach (Receptionist::query()->get() as $receptionist) {
+            $routes = array_map(fn ($route) => is_array($route) ? ['to' => $map(is_string($route['to'] ?? null) ? $route['to'] : null) ?? Destination::HANGUP] + $route : $route,
+                (array) $receptionist->routes);
+            $receptionist->forceFill(['fallback' => $map($receptionist->fallback), 'routes' => $routes])->saveQuietly();
+        }
         foreach (IvrMenu::query()->get() as $menu) {
             $options = array_map(fn ($value) => is_string($value) ? $map($value) : Destination::HANGUP, (array) $menu->options);
             $menu->forceFill(['fallback' => $map($menu->fallback), 'options' => $options])->saveQuietly();
@@ -208,13 +230,19 @@ class TenantRestore
 
     private function insertPivot(string $table, array $rows): void
     {
-        [$parentKey, $parentTable] = $table === 'ring_group_user' ? ['ring_group_id', 'ring_groups'] : ['mailbox_id', 'mailboxes'];
+        [$parentKey, $parentTable] = match ($table) {
+            'ring_group_user' => ['ring_group_id', 'ring_groups'],
+            'call_queue_user' => ['call_queue_id', 'call_queues'],
+            default => ['mailbox_id', 'mailboxes'],
+        };
         foreach ($rows as $row) {
             $row = (array) $row;
             $parent = $this->ids[$parentTable][(int) ($row[$parentKey] ?? 0)] ?? null;
             $user = $this->ids['users'][(int) ($row['user_id'] ?? 0)] ?? null;
             if ($parent && $user) {
-                DB::table($table)->insert([$parentKey => $parent, 'user_id' => $user] + (isset($row['position']) ? ['position' => (int) $row['position']] : []));
+                DB::table($table)->insert([$parentKey => $parent, 'user_id' => $user]
+                    + (isset($row['position']) ? ['position' => (int) $row['position']] : [])
+                    + (isset($row['logged_in']) ? ['logged_in' => (bool) $row['logged_in']] : []));
             }
         }
     }
@@ -242,6 +270,9 @@ class TenantRestore
     private function json(ZipArchive $zip, string $name): array
     {
         $stat = $zip->statName($name);
+        if ($stat === false && in_array(basename($name, '.json'), self::OPTIONAL, true)) {
+            return [];
+        }
         if ($stat === false) {
             throw new RuntimeException("That file is not a QuaverDesk export ({$name} is missing).");
         }

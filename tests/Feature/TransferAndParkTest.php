@@ -133,11 +133,11 @@ class TransferAndParkTest extends TestCase
 
         $this->get('/admin/ring-groups/new')->assertOk()->assertSee('name="extension"', false);
         $this->post('/admin/ring-groups', ['name' => 'Sales', 'extension' => '230', 'strategy' => 'simultaneous', 'ring_seconds' => 20])
-            ->assertSessionHasErrors(['extension' => 'Someone already has that extension.']);
+            ->assertSessionHasErrors(['extension' => 'Someone, or a call queue, already has that extension.']);
         $this->post('/admin/ring-groups', ['name' => 'Sales', 'extension' => '500', 'strategy' => 'simultaneous', 'ring_seconds' => 20])
             ->assertSessionHasNoErrors();
         $this->patch("/admin/users/{$this->sam->id}/extension", ['extension' => '500'])
-            ->assertSessionHasErrors(['extension' => 'A ring group already has that extension.'], null, 'extension');
+            ->assertSessionHasErrors(['extension' => 'A ring group or call queue already has that extension.'], null, 'extension');
 
         // New people are never given a ring group's extension.
         RingGroup::create(['name' => 'Support', 'extension' => User::nextExtension(), 'strategy' => 'simultaneous', 'ring_seconds' => 20]);

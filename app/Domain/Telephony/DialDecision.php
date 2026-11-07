@@ -12,6 +12,8 @@ final class DialDecision
     public const PARK = 'park'; // target: the slot, or null for "any free slot"
     public const RECORD_SOUND = 'record_sound'; // *0: record a sound for greetings and menus
     public const VOICEMAIL = 'voicemail'; // *00: play your messages, record your greeting
+    public const QUEUE = 'queue';
+    public const QUEUE_LOGIN = 'queue_login'; // *45: log in to (or out of) your call queues
 
     private function __construct(
         public readonly string $type,
@@ -38,6 +40,16 @@ final class DialDecision
     public static function ringGroup(int $id): self
     {
         return new self(self::RING_GROUP, (string) $id);
+    }
+
+    public static function queue(int $id): self
+    {
+        return new self(self::QUEUE, (string) $id);
+    }
+
+    public static function queueLogin(): self
+    {
+        return new self(self::QUEUE_LOGIN);
     }
 
     public static function park(?int $slot): self

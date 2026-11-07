@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Domain\Telephony\Dialplan;
 use App\Http\Controllers\Controller;
 use App\Mail\UserInvited;
+use App\Models\CallQueue;
 use App\Models\RingGroup;
 use App\Models\User;
 use App\Support\Invites;
@@ -287,7 +288,7 @@ class UserController extends Controller
     private const EXTENSION_MESSAGES = [
         'extension.regex' => 'Extensions are 3 to 5 digits, starting with 2 to 8 (so they never clash with 999 or other numbers).',
         'extension.unique' => 'Someone else already has that extension.',
-        'extension.not_in' => 'A ring group already has that extension.',
+        'extension.not_in' => 'A ring group or call queue already has that extension.',
     ];
 
     /** @return list<mixed> */
@@ -297,7 +298,7 @@ class UserController extends Controller
             'string',
             'regex:'.Dialplan::EXTENSION,
             TenantRule::unique('users', 'extension')->ignore($except?->id),
-            Rule::notIn(RingGroup::query()->whereNotNull('extension')->pluck('extension')->all()),
+            Rule::notIn([...RingGroup::query()->whereNotNull('extension')->pluck('extension')->all(), ...CallQueue::extensions()]),
         ];
     }
 

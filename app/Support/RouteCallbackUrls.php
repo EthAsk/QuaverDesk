@@ -24,6 +24,11 @@ class RouteCallbackUrls implements CallbackUrls
         return VoiceUrl::to('webhooks.voice.after-dial', ['next' => (string) $next] + $this->ctx($ctx));
     }
 
+    public function queue(Destination $queue, RoutingContext $ctx, bool $afterRing = false): string
+    {
+        return VoiceUrl::to('webhooks.voice.queue', ['queue' => (string) $queue] + $this->ctx($ctx) + ($afterRing ? ['rang' => 1] : []));
+    }
+
     public function ivrChoice(Destination $ivr, RoutingContext $ctx): string
     {
         return VoiceUrl::to('webhooks.voice.ivr-choice', ['ivr' => (string) $ivr] + $this->ctx($ctx));
@@ -37,6 +42,11 @@ class RouteCallbackUrls implements CallbackUrls
     public function recordingSaved(): string
     {
         return VoiceUrl::to('webhooks.voice.recording-saved', []);
+    }
+
+    public function receptionist(Destination $receptionist, RoutingContext $ctx): string
+    {
+        return VoiceUrl::to('webhooks.voice.receptionist', ['to' => (string) $receptionist] + $this->ctx($ctx));
     }
 
     /** @return array<string, int> */

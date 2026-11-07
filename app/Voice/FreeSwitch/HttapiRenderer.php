@@ -53,6 +53,7 @@ final class HttapiRenderer
                 'gather' => $this->gather($doc, $work, $step[1], $step[2]),
                 'record' => $this->record($doc, $work, $step[1]),
                 'park' => $this->park($doc, $work, $step[1], $step[2], $step[3]),
+                'hold' => $this->hold($doc, $work, $step[1], $step[2]),
                 'redirect' => (bool) $work->appendChild($this->el($doc, 'continue', null, ['action' => $step[1]])),
                 'hangup' => (bool) $work->appendChild($doc->createElement('hangup')),
                 default => throw new InvalidArgumentException("Unknown call step: {$step[0]}"),
@@ -116,6 +117,14 @@ final class HttapiRenderer
         }
 
         $legs = array_map(fn (DialTarget $t) => $this->leg($t), $targets);
+
+        if (! empty($o['holdMusic'])) {
+            // The caller (already answered, as in a queue) hears this instead of ringing.
+            $music = self::safe($o['holdMusic'], '#^https?://[A-Za-z0-9.:/_?=&%-]+$#');
+            foreach (['ringback', 'transfer_ringback'] as $name) {
+                $work->appendChild($this->el($doc, 'execute', null, ['application' => 'set', 'data' => "{$name}={$music}"]));
+            }
+        }
 
         $work->appendChild($this->el($doc, 'execute', null, [
             'application' => 'bridge',
@@ -228,6 +237,23 @@ final class HttapiRenderer
         return true;
     }
 
+    /** Hold music for at most $seconds (playback stops then), or silence when there is none. */
+    private function hold(DOMDocument $doc, DOMElement $work, ?string $url, int $seconds): bool
+    {
+        $seconds = max(1, min(600, $seconds));
+        if ($url === null) {
+            $work->appendChild($this->el($doc, 'execute', null, ['application' => 'sleep', 'data' => (string) ($seconds * 1000)]));
+
+            return false;
+        }
+
+        $work->appendChild($this->el($doc, 'execute', null, ['application' => 'set', 'data' => "playback_timeout_sec={$seconds}"]));
+        $work->appendChild($this->el($doc, 'playback', null, ['file' => self::safe($url, '#^https?://[A-Za-z0-9.:/_?=&%-]+$#')]));
+        $work->appendChild($this->el($doc, 'execute', null, ['application' => 'unset', 'data' => 'playback_timeout_sec']));
+
+        return false;
+    }
+
     private function gather(DOMDocument $doc, DOMElement $work, string $prompt, array $o): bool
     {
         $tag = empty($o['sound'])
@@ -244,14 +270,15 @@ final class HttapiRenderer
 
     private function record(DOMDocument $doc, DOMElement $work, array $o): bool
     {
-        $work->appendChild($this->el($doc, 'record', null, [
-            'file' => 'voicemail.wav',
+        $listen = ! empty($o['listen']);
+        $work->appendChild($this->el($doc, 'record', null, array_filter([
+            'file' => $listen ? 'speech.wav' : 'voicemail.wav',
             'name' => self::RECORDING_FIELD,
             'limit' => (int) ($o['maxLength'] ?? 120),
-            'silence-hits' => 5,
-            'beep-file' => self::BEEP,
+            'silence-hits' => $listen ? 2 : 5,
+            'beep-file' => $listen ? null : self::BEEP, // no beep before a spoken reply
             'action' => $o['action'],
-        ]));
+        ], fn ($v) => $v !== null)));
 
         return true;
     }

@@ -15,6 +15,9 @@ class Recording extends Model
     public const CALL = 'call';
     public const VOICEMAIL = 'voicemail';
 
+    /** Status of a message the AI receptionist wrote down: text only, no audio. */
+    public const MESSAGE = 'message';
+
     protected $fillable = [
         'kind', 'call_id', 'mailbox_id', 'carrier_sid', 'upload_path', 'from', 'to', 'duration_seconds',
         'path', 'status', 'error', 'transcript', 'summary', 'action_items', 'sentiment',

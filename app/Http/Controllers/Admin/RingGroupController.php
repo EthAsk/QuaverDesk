@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Domain\Routing\RingGroupConfig;
 use App\Domain\Telephony\Dialplan;
 use App\Http\Controllers\Controller;
+use App\Models\CallQueue;
 use App\Models\RingGroup;
 use App\Models\User;
 use App\Rules\ValidDestination;
@@ -79,7 +80,7 @@ class RingGroupController extends Controller
             // A short number phones can dial, or transfer calls to; never one a person has.
             'extension' => ['nullable', 'string', 'regex:'.Dialplan::EXTENSION,
                 TenantRule::unique('ring_groups', 'extension')->ignore($group->id),
-                Rule::notIn(User::query()->whereNotNull('extension')->pluck('extension')->all())],
+                Rule::notIn([...User::query()->whereNotNull('extension')->pluck('extension')->all(), ...CallQueue::extensions()])],
             'strategy' => ['required', Rule::in([RingGroupConfig::SIMULTANEOUS, RingGroupConfig::IN_ORDER])],
             'ring_seconds' => ['required', 'integer', 'min:5', 'max:120'],
             'fallback' => ['nullable', new ValidDestination()],
@@ -90,7 +91,7 @@ class RingGroupController extends Controller
         ], [
             'extension.regex' => 'Extensions are 3 to 5 digits, starting with 2 to 8.',
             'extension.unique' => 'Another ring group already has that extension.',
-            'extension.not_in' => 'Someone already has that extension.',
+            'extension.not_in' => 'Someone, or a call queue, already has that extension.',
         ]);
 
         if ($group->exists && ($data['fallback'] ?? null) === "ring_group:{$group->id}") {

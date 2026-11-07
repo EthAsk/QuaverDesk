@@ -16,6 +16,7 @@ use App\Http\Controllers\Controller;
 use App\Jobs\StoreRecording;
 use App\Models\Acknowledgement;
 use App\Models\Call;
+use App\Models\CallQueue;
 use App\Models\DeskPhone;
 use App\Models\Mailbox;
 use App\Models\PhoneNumber;
@@ -32,8 +33,10 @@ use App\Support\RecordingPolicy;
 use App\Support\RouteCallbackUrls;
 use App\Tenancy\CallTenant;
 use App\Tenancy\Tenancy;
+use App\Voice\CallQueueRunner;
 use App\Voice\CallRequest;
 use App\Voice\ParkingLot;
+use App\Voice\ReceptionistRunner;
 use App\Voice\PhoneSounds;
 use App\Voice\VoiceServer;
 use App\Voice\VoicemailMenu;
@@ -61,6 +64,9 @@ class VoiceController extends Controller
     public const MSG_SOUND_SAVED = 'Saved. You will find it on the Sounds page, where you can rename it and choose where it plays.';
     public const MSG_SOUND_NOT_SAVED = 'Sorry, nothing was recorded. Hang up and try again.';
     public const MSG_SOUND_ADMINS_ONLY = 'Only an admin can record sounds.';
+    public const MSG_QUEUES_IN = 'You are now logged in to your call queues.';
+    public const MSG_QUEUES_OUT = 'You are now logged out of your call queues.';
+    public const MSG_NO_QUEUES = 'You are not an agent in any call queue.';
     public const MSG_CONFIRM_MOBILE = 'Hello. This call is to confirm your mobile for your work phone, so your calls can ring it too. To confirm, press 1.';
 
     public function __construct(
@@ -106,7 +112,8 @@ class VoiceController extends Controller
         $this->log($call, [
             'user_id' => $caller?->id,
             'sip_trunk_id' => $trunk?->id,
-            'direction' => in_array($decision->type, [DialDecision::CLIENT, DialDecision::RING_GROUP, DialDecision::PARK, DialDecision::RECORD_SOUND, DialDecision::VOICEMAIL], true) ? 'internal' : 'outbound',
+            'direction' => in_array($decision->type, [DialDecision::CLIENT, DialDecision::RING_GROUP, DialDecision::QUEUE, DialDecision::QUEUE_LOGIN,
+                DialDecision::PARK, DialDecision::RECORD_SOUND, DialDecision::VOICEMAIL], true) ? 'internal' : 'outbound',
             'from' => $caller?->carrierIdentity(),
             'to' => $decision->target ?? substr($to, 0, 64),
             'decision' => $decision->type,
@@ -116,6 +123,8 @@ class VoiceController extends Controller
 
         return $this->reply(match ($decision->type) {
             DialDecision::RING_GROUP => $this->router->route(new Destination(Destination::RING_GROUP, (int) $decision->target), new RoutingContext()),
+            DialDecision::QUEUE => $this->router->route(new Destination(Destination::QUEUE, (int) $decision->target), new RoutingContext()),
+            DialDecision::QUEUE_LOGIN => $this->toggleQueues($caller),
             DialDecision::PARK => $this->pickUp($decision),
             DialDecision::RECORD_SOUND => $this->recordSound($caller),
             DialDecision::VOICEMAIL => app(VoicemailMenu::class)->start($caller),
@@ -176,6 +185,7 @@ class VoiceController extends Controller
             ]),
             $decision->type === DialDecision::CLIENT => $this->router->route(new Destination(Destination::USER, (int) substr((string) $decision->target, 5)), new RoutingContext()),
             $decision->type === DialDecision::RING_GROUP => $this->router->route(new Destination(Destination::RING_GROUP, (int) $decision->target), new RoutingContext()),
+            $decision->type === DialDecision::QUEUE => $this->router->route(new Destination(Destination::QUEUE, (int) $decision->target), new RoutingContext()),
             in_array($decision->type, [DialDecision::NUMBER, DialDecision::EMERGENCY], true) => $this->dialOut($decision, $trunk, $by),
             // Nowhere it can go (or no free parking slot): back to the person who transferred it.
             default => $this->router->route(new Destination(Destination::USER, $by->id), new RoutingContext()),
@@ -332,6 +342,22 @@ class VoiceController extends Controller
         return $this->reply($this->router->route($to, $this->context($request)));
     }
 
+    /** A call queue's next round (CallQueueRunner). */
+    public function queue(Request $request, CallQueueRunner $queues): Response
+    {
+        $call = new CallRequest($request);
+        if ($call->exiting()) {
+            return $this->ended($call);
+        }
+
+        $to = Destination::parse($request->query('queue'));
+        if ($to === null || $to->type !== Destination::QUEUE) {
+            return $this->reply($this->router->unavailable());
+        }
+
+        return $this->reply($queues->round($to, $this->context($request), $call, $request->query('rang') === '1'));
+    }
+
     public function afterDial(Request $request): Response
     {
         $call = new CallRequest($request);
@@ -367,6 +393,22 @@ class VoiceController extends Controller
         }
 
         return $this->reply($this->router->ivrChoice($ivr, $call->digits(), $this->context($request)));
+    }
+
+    /** The caller spoke to the AI receptionist; what they said (audio) comes with this request. */
+    public function receptionist(Request $request, ReceptionistRunner $receptionist): Response
+    {
+        $call = new CallRequest($request);
+        if ($call->exiting()) {
+            return $this->ended($call);
+        }
+
+        $to = Destination::parse($request->query('to'));
+        if ($to === null || $to->type !== Destination::RECEPTIONIST) {
+            return $this->reply($this->router->unavailable());
+        }
+
+        return $this->reply($receptionist->turn($to, $this->context($request), $call));
     }
 
     /** The caller left (or didn't leave) a voicemail; the audio comes with this request. */
@@ -468,6 +510,7 @@ class VoiceController extends Controller
     {
         if ($id = $call->callId()) {
             $this->settleMobileLegs($id, $call->answeredLeg());
+            CallQueueRunner::callEnded($id);
             $logs = Call::query()->whereNull('duration_seconds')
                 ->where(fn ($q) => $q->where('carrier_sid', $id)->orWhere(fn ($q) => $q->where('parent_sid', $id)->where('leg', Call::LEG_TRANSFER)))
                 ->get();
@@ -549,7 +592,8 @@ class VoiceController extends Controller
             extensions: fn (string $ext) => preg_match(Dialplan::BLF, $ext)
                 ? User::query()->seated()->get()->first(fn (User $u) => hash_equals($u->blfId(), $ext))?->carrierIdentity()
                 : (User::query()->firstWhere('extension', $ext)?->carrierIdentity()
-                    ?? (($group = RingGroup::query()->where('extension', $ext)->value('id')) ? 'ring_group:'.$group : null)),
+                    ?? (($group = RingGroup::query()->where('extension', $ext)->value('id')) ? 'ring_group:'.$group : null)
+                    ?? ($this->licences->allows(Feature::CallQueues) && ($queue = CallQueue::query()->where('extension', $ext)->value('id')) ? 'queue:'.$queue : null)),
         ))->decide($to);
 
         if ($decision->type === DialDecision::CLIENT && ! User::query()->whereKey((int) substr((string) $decision->target, 5))->exists()) {
@@ -587,6 +631,18 @@ class VoiceController extends Controller
             VoiceUrl::to('webhooks.voice.after-dial', ['next' => (string) Destination::hangup()]),
             $caller ? $this->limits->maxSeconds($caller) : null,
         );
+    }
+
+    /** A phone dialled *45: log in to every call queue they're an agent in, or out of them all if they're in already. */
+    private function toggleQueues(User $caller): CallScript
+    {
+        $loggedIn = $caller->toggleQueues();
+
+        return (new CallScript())->say(match ($loggedIn) {
+            null => self::MSG_NO_QUEUES,
+            true => self::MSG_QUEUES_IN,
+            false => self::MSG_QUEUES_OUT,
+        })->hangup();
     }
 
     /** A phone dialled *0: an admin records a sound for greetings, menus or hold music. */

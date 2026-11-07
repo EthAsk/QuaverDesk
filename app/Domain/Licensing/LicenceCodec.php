@@ -53,6 +53,7 @@ final class LicenceCodec
         int $seats,
         ?DateTimeImmutable $expiresAt,
         ?DateTimeImmutable $issuedAt = null,
+        bool $ownBranding = false,
     ): string {
         if ($plan === Plan::Free) {
             throw new InvalidLicence('Free plan needs no licence key.');
@@ -70,7 +71,7 @@ final class LicenceCodec
             'seats' => $seats,
             'iat' => ($issuedAt ?? new DateTimeImmutable())->getTimestamp(),
             'exp' => $expiresAt?->getTimestamp(),
-        ], JSON_THROW_ON_ERROR);
+        ] + ($ownBranding ? ['brand' => true] : []), JSON_THROW_ON_ERROR); // only when set, so other keys are unchanged
 
         $signature = sodium_crypto_sign_detached(self::PREFIX.'.'.self::b64url($payload), $secret);
 
@@ -124,6 +125,7 @@ final class LicenceCodec
             $data['seats'],
             new DateTimeImmutable('@'.(int) ($data['iat'] ?? 0)),
             $expiresAt,
+            ($data['brand'] ?? false) === true,
         );
     }
 

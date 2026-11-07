@@ -11,6 +11,12 @@ interface CallbackUrls
     /** After a <Dial> ends: hang up if answered, otherwise go to $next. */
     public function afterDial(Destination $next, RoutingContext $ctx): string;
 
+    /**
+     * A call queue's next round (see App\Voice\CallQueueRunner): step is the
+     * round. $afterRing when agents were rung, so the dial outcome comes with it.
+     */
+    public function queue(Destination $queue, RoutingContext $ctx, bool $afterRing = false): string;
+
     /** Where an IVR sends the caller's key press. */
     public function ivrChoice(Destination $ivr, RoutingContext $ctx): string;
 
@@ -19,4 +25,7 @@ interface CallbackUrls
 
     /** Called when a call recording is saved. */
     public function recordingSaved(): string;
+
+    /** Where an AI receptionist's next turn (with what the caller just said) is handled. */
+    public function receptionist(Destination $receptionist, RoutingContext $ctx): string;
 }

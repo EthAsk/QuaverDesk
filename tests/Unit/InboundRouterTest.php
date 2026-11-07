@@ -10,6 +10,7 @@ use App\Domain\Routing\IvrConfig;
 use App\Domain\Routing\MailboxConfig;
 use App\Domain\Routing\RingGroupConfig;
 use App\Domain\Routing\RoutingContext;
+use App\Domain\Routing\ReceptionistConfig;
 use App\Domain\Routing\RoutingDirectory;
 use App\Domain\Routing\WeeklySchedule;
 use DateTimeImmutable;
@@ -23,10 +24,10 @@ class InboundRouterTest extends TestCase
      * @param  array<int, MailboxConfig>  $boxes
      * @param  array<int, int>  $userBoxes  user id => mailbox id
      */
-    private function router(array $groups = [], array $ivrs = [], array $boxes = [], array $userBoxes = []): InboundRouter
+    private function router(array $groups = [], array $ivrs = [], array $boxes = [], array $userBoxes = [], array $receptionists = []): InboundRouter
     {
-        $directory = new class($groups, $ivrs, $boxes, $userBoxes) implements RoutingDirectory {
-            public function __construct(private array $groups, private array $ivrs, private array $boxes, private array $userBoxes) {}
+        $directory = new class($groups, $ivrs, $boxes, $userBoxes, $receptionists) implements RoutingDirectory {
+            public function __construct(private array $groups, private array $ivrs, private array $boxes, private array $userBoxes, private array $receptionists = []) {}
             public function userTargets(int $userId): array {
                 if ($userId === 404) { return []; }
                 $t = [DialTarget::client("user-{$userId}")];
@@ -37,6 +38,7 @@ class InboundRouterTest extends TestCase
             public function ringGroup(int $id): ?RingGroupConfig { return $this->groups[$id] ?? null; }
             public function ivr(int $id): ?IvrConfig { return $this->ivrs[$id] ?? null; }
             public function mailbox(int $id): ?MailboxConfig { return $this->boxes[$id] ?? null; }
+            public function receptionist(int $id): ?ReceptionistConfig { return $this->receptionists[$id] ?? null; }
         };
 
         $urls = new class implements CallbackUrls {
@@ -44,8 +46,10 @@ class InboundRouterTest extends TestCase
             public function route(Destination $d, RoutingContext $c): string { return "route?to={$d}&".$this->q($c); }
             public function afterDial(Destination $n, RoutingContext $c): string { return "after?next={$n}&".$this->q($c); }
             public function ivrChoice(Destination $i, RoutingContext $c): string { return "choice?ivr={$i}&".$this->q($c); }
+            public function queue(Destination $q, RoutingContext $c, bool $rang = false): string { return "queue?queue={$q}&".$this->q($c).($rang ? '&rang=1' : ''); }
             public function voicemailSaved(Destination $m): string { return "vm-saved?box={$m}"; }
             public function recordingSaved(): string { return 'rec-saved'; }
+            public function receptionist(Destination $r, RoutingContext $c): string { return "reception?to={$r}&".$this->q($c); }
         };
 
         return new InboundRouter($directory, $urls);

@@ -17,6 +17,8 @@ final class Licence
         public readonly int $seats,
         public readonly DateTimeImmutable $issuedAt,
         public readonly ?DateTimeImmutable $expiresAt,
+        // The partner who sold it paid for their own branding: no "Powered by QuaverDesk".
+        public readonly bool $ownBranding = false,
     ) {
     }
 
@@ -33,6 +35,15 @@ final class Licence
     public function allows(Feature $feature): bool
     {
         return $this->plan->allows($feature);
+    }
+
+    /**
+     * An install renamed for a partner (APP_NAME) says "Powered by QuaverDesk"
+     * unless its licence includes the partner's own branding.
+     */
+    public function showsPoweredBy(string $appName): bool
+    {
+        return strcasecmp(trim($appName), 'QuaverDesk') !== 0 && ! $this->ownBranding;
     }
 
     /** The most users this install may have. */

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en-GB">
 <body style="font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; color:#14213d; line-height:1.5; max-width:560px; margin:0 auto; padding:24px">
-    <h2 style="margin:0 0 4px">New voicemail</h2>
+    <h2 style="margin:0 0 4px">{{ $recording->status === \App\Models\Recording::MESSAGE ? 'New message, taken by the AI receptionist' : 'New voicemail' }}</h2>
     <p style="margin:0 0 16px;color:#5d6578">{{ $mailbox->name }}</p>
 
     <table style="border-collapse:collapse;margin-bottom:16px">
@@ -15,8 +15,8 @@
         <p style="background:#fef3e2;padding:12px;border-radius:8px">The audio for this message could not be saved. The caller's number is above.</p>
     @endif
 
-    @if ($showText && $recording->summary)
-        <h3 style="margin:16px 0 4px">Summary</h3>
+    @if (($showText || $recording->status === \App\Models\Recording::MESSAGE) && $recording->summary)
+        <h3 style="margin:16px 0 4px">{{ $recording->status === \App\Models\Recording::MESSAGE ? 'Message' : 'Summary' }}</h3>
         <p>{{ $recording->summary }}</p>
     @endif
 

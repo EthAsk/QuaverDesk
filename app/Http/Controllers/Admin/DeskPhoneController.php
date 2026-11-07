@@ -34,7 +34,10 @@ class DeskPhoneController extends Controller
         return view('admin.desk-phones', [
             'online' => $online,
             'service' => DeskPhone::service(),
-            'phones' => DeskPhone::query()->with('user:id,name')->orderBy('label')->get(),
+            // A base's handsets follow it, in handset order.
+            'phones' => ($phones = DeskPhone::query()->with('user:id,name')->get())
+                ->sortBy(fn (DeskPhone $p) => [mb_strtolower(($p->base_id ? $phones->firstWhere('id', $p->base_id) : $p)?->label ?? ''), $p->base_id ?? 0, $p->handset ?? 1])->values(),
+            'bases' => DeskPhone::query()->whereIn('brand', DeskPhone::DECT_BRANDS)->orderBy('label')->get(['id', 'label']),
             'users' => User::query()->seated()->orderBy('name')->get(['id', 'name', 'extension']),
             'reveal' => session('reveal_phone'),
             'revealAdmin' => session('reveal_admin'),
@@ -52,8 +55,13 @@ class DeskPhoneController extends Controller
             'user_id' => ['required', TenantRule::exists('users')->where('forward_only', 0)],
             'label' => ['required', 'string', 'max:60'],
             'allowed_ips' => ['nullable', 'string', 'max:255'],
+            'base_id' => ['nullable', TenantRule::exists('desk_phones', 'id')->whereIn('brand', DeskPhone::DECT_BRANDS)],
             ...self::provisioningRules(),
-        ]);
+        ], ['base_id.exists' => 'Choose one of your DECT bases.']);
+        $base = isset($data['base_id']) ? DeskPhone::query()->findOrFail($data['base_id']) : null;
+        if ($base !== null) {
+            return $this->storeHandset($request, $base, $data);
+        }
         $allowed = self::allowedIps($data['allowed_ips'] ?? null);
         [$brand, $mac] = self::brandAndMac($data);
 
@@ -82,14 +90,42 @@ class DeskPhoneController extends Controller
     }
 
     /**
-     * Locks a phone to the addresses it may sign in and call from (an office's
-     * public IP, say), or unlocks it. Stolen settings then don't work elsewhere.
+     * A handset on a DECT base with its own extension. The base sets it up
+     * (as its next free handset number) and its lock applies, so the handset
+     * has no make, MAC address or lock of its own.
+     *
+     * @param  array<string, mixed>  $data
      */
+    private function storeHandset(Request $request, DeskPhone $base, array $data): RedirectResponse
+    {
+        $handset = $base->nextHandset();
+        if ($handset === null) {
+            throw ValidationException::withMessages(['base_id' => "{$base->label} already has ".DeskPhone::MAX_HANDSETS.' handsets with their own extension.']);
+        }
+
+        $phone = DeskPhone::create([
+            'user_id' => $data['user_id'],
+            'base_id' => $base->id,
+            'handset' => $handset,
+            'label' => $data['label'],
+            'sip_username' => 'u'.$data['user_id'].'-'.bin2hex(random_bytes(3)),
+            'sip_password' => self::strongPassword(),
+        ]);
+        DeskPhoneEvent::record(DeskPhoneEvent::ADDED, $phone, $request->user(), "For {$phone->user->name}, as handset {$handset} on {$base->label}.");
+        $status = "Handset added. Register it to {$base->label} as handset {$handset}.";
+
+        return back()->with('status', $base->provisioned() ? $status.' '.$this->resync($request, $base, app(VoiceServer::class)) : $status);
+    }
+
     /** Automatic set-up: the handset's make and MAC address. Blank turns it off. */
     public function provisioning(Request $request, DeskPhone $phone): RedirectResponse
     {
+        abort_if($phone->base_id !== null, 404); // a DECT handset is set up by its base
         $data = $request->validateWithBag('provisioning', self::provisioningRules());
         [$brand, $mac] = self::brandAndMac($data, 'provisioning', $phone);
+        if (! in_array($brand, DeskPhone::DECT_BRANDS, true) && $phone->handsets()->exists()) {
+            throw ValidationException::withMessages(['mac' => "{$phone->label} has handsets with their own extension. Remove them first."])->errorBag('provisioning');
+        }
 
         $changed = $brand !== $phone->brand || $mac !== $phone->mac;
         $phone->forceFill(['brand' => $brand, 'mac' => $mac]);
@@ -181,6 +217,7 @@ class DeskPhoneController extends Controller
      */
     public function keys(Request $request, DeskPhone $phone, VoiceServer $voice): RedirectResponse
     {
+        abort_if($phone->isDectBase() || $phone->base_id !== null, 404); // DECT handsets have no busy lamp keys
         $data = $request->validateWithBag('keys', [
             'blf_keys' => ['array', 'max:'.DeskPhone::MAX_BLF_KEYS],
             'blf_keys.*' => ['integer', 'distinct', Rule::notIn([$phone->user_id]), TenantRule::exists('users', 'id')->where('forward_only', 0)],
@@ -235,6 +272,7 @@ class DeskPhoneController extends Controller
 
     public function lock(Request $request, DeskPhone $phone): RedirectResponse
     {
+        abort_if($phone->base_id !== null, 404); // a DECT handset has its base's lock
         $data = $request->validateWithBag('lock', ['allowed_ips' => ['nullable', 'string', 'max:255']]);
         $phone->update(['allowed_ips' => self::allowedIps($data['allowed_ips'] ?? null, 'lock'), 'filter_lan' => $request->boolean('filter_lan')]);
         DeskPhoneEvent::record(DeskPhoneEvent::LOCK_CHANGED, $phone, $request->user(), $phone->allowed_ips
@@ -267,12 +305,20 @@ class DeskPhoneController extends Controller
         return back()->with('reveal_phone', $phone->id);
     }
 
-    public function destroy(Request $request, DeskPhone $phone): RedirectResponse
+    public function destroy(Request $request, DeskPhone $phone, VoiceServer $voice): RedirectResponse
     {
+        $handsets = $phone->handsets()->count();
         DeskPhoneEvent::record(DeskPhoneEvent::REMOVED, $phone, $request->user());
-        $phone->delete();
+        $phone->delete(); // and a base's handsets (see DeskPhone::booted)
 
-        return back()->with('status', "{$phone->label} removed. It can no longer sign in.");
+        $status = "{$phone->label} removed. It can no longer sign in.";
+        if ($handsets) {
+            $status = "{$phone->label} and its {$handsets} other ".($handsets === 1 ? 'handset' : 'handsets').' removed. They can no longer sign in.';
+        }
+        // Its base turns the account off at its next download.
+        $base = $phone->base;
+
+        return back()->with('status', $base?->provisioned() ? $status.' '.$this->resync($request, $base, $voice) : $status);
     }
 
     /** 20 characters with upper case, lower case and a digit, which every handset accepts. */

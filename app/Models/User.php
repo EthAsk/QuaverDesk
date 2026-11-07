@@ -7,9 +7,11 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\DB;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 use Laravel\Passkeys\Contracts\PasskeyUser;
 use Laravel\Passkeys\PasskeyAuthenticatable;
@@ -139,6 +141,7 @@ class User extends Authenticatable implements PasskeyUser
         $taken = array_flip([
             ...static::query()->whereNotNull('extension')->pluck('extension')->all(),
             ...RingGroup::query()->whereNotNull('extension')->pluck('extension')->all(),
+            ...CallQueue::extensions(),
         ]);
         for ($n = 201; isset($taken[(string) $n]); $n++);
 
@@ -196,6 +199,29 @@ class User extends Authenticatable implements PasskeyUser
     public function calls(): HasMany
     {
         return $this->hasMany(Call::class);
+    }
+
+    /** The call queues they're an agent in (pivot logged_in: taking its calls now). */
+    public function queues(): BelongsToMany
+    {
+        return $this->belongsToMany(CallQueue::class)->withPivot('logged_in');
+    }
+
+    /**
+     * *45 and the dashboard button: logs them in to all their queues, or out
+     * of them all when they're in every one already. True for logged in,
+     * false for out, null when they aren't in any queue.
+     */
+    public function toggleQueues(): ?bool
+    {
+        $queues = $this->queues()->get();
+        if ($queues->isEmpty()) {
+            return null;
+        }
+        $in = $queues->contains(fn (CallQueue $q) => ! $q->pivot->logged_in);
+        DB::table('call_queue_user')->where('user_id', $this->id)->update(['logged_in' => $in]);
+
+        return $in;
     }
 
     public function deskPhones(): HasMany

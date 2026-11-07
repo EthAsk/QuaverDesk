@@ -59,22 +59,35 @@ class AiClient
 
         $prompt = AnalysisPrompt::build($transcript, $summary, $actionItems, $sentiment, $kind);
 
-        $reply = $a['provider'] === AiSettings::ANTHROPIC
-            ? $this->anthropic($a, $prompt)
-            : $this->openAiCompatible($a, $prompt);
+        return AnalysisParser::parse($this->complete($prompt), $summary, $actionItems, $sentiment);
+    }
 
-        return AnalysisParser::parse($reply, $summary, $actionItems, $sentiment);
+    /**
+     * Sends a prompt to the analysis provider and returns its text reply.
+     *
+     * @param  array{system: string, user: string}  $prompt
+     */
+    public function complete(array $prompt, int $maxTokens = 800): string
+    {
+        $a = $this->settings->all()['analysis'];
+        if (empty($a['api_key'])) {
+            throw new RuntimeException('Summaries are not set up. Add your provider under Admin → AI provider.');
+        }
+
+        return $a['provider'] === AiSettings::ANTHROPIC
+            ? $this->anthropic($a, $prompt, $maxTokens)
+            : $this->openAiCompatible($a, $prompt, $maxTokens);
     }
 
     /** @param array{system: string, user: string} $prompt */
-    private function anthropic(array $a, array $prompt): string
+    private function anthropic(array $a, array $prompt, int $maxTokens): string
     {
         $response = Http::withHeaders([
             'x-api-key' => $a['api_key'],
             'anthropic-version' => self::ANTHROPIC_VERSION,
         ])->timeout(90)->post(self::ANTHROPIC_URL, [
             'model' => $a['model'],
-            'max_tokens' => 800,
+            'max_tokens' => $maxTokens,
             'system' => $prompt['system'],
             'messages' => [['role' => 'user', 'content' => $prompt['user']]],
         ]);
@@ -90,12 +103,13 @@ class AiClient
     }
 
     /** @param array{system: string, user: string} $prompt */
-    private function openAiCompatible(array $a, array $prompt): string
+    private function openAiCompatible(array $a, array $prompt, int $maxTokens): string
     {
         self::assertEndpoint((string) $a['base_url']);
         $response = Http::withToken($a['api_key'])->withoutRedirecting()->timeout(90)
             ->post(rtrim($a['base_url'], '/').'/chat/completions', [
                 'model' => $a['model'],
+                'max_tokens' => $maxTokens,
                 'messages' => [
                     ['role' => 'system', 'content' => $prompt['system']],
                     ['role' => 'user', 'content' => $prompt['user']],

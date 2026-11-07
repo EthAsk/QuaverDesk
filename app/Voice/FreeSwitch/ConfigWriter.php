@@ -141,7 +141,7 @@ class ConfigWriter
             ] + $this->holdMusicFor($user));
         }
 
-        foreach (DeskPhone::query()->with('user')->orderBy('id')->get() as $phone) {
+        foreach (DeskPhone::query()->with('user', 'base')->orderBy('id')->get() as $phone) {
             if ($phone->user === null || $phone->user->isForwardOnly()) {
                 continue;
             }

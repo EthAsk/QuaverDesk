@@ -10,6 +10,15 @@
         </p>
     </div>
 
+    @feature('ai_search')
+        <form method="get" action="{{ route('recordings.search') }}" class="card row" style="gap:8px;align-items:center">
+            <input name="q" type="search" maxlength="500" aria-label="Search calls" placeholder="Search what was said, or ask a question about your calls" style="flex:1">
+            <button type="submit" class="btn">Search</button>
+        </form>
+    @else
+        <p class="small muted">Search what was said across all your calls, and ask questions about them, with AI search <span class="pill">Pro</span></p>
+    @endfeature
+
     <div class="card">
         @if ($recordings->isEmpty())
             <p class="muted">Nothing here yet.</p>

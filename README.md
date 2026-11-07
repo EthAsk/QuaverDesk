@@ -19,10 +19,10 @@ Bring your own AI provider too; Plus and Pro features unlock with a licence key.
 | Licensing | Signed keys (Free / Plus / Pro), automatic daily renewal |
 | Calling | Phone app (installable, runs in the background, call notifications, click-to-call, `tel:` links), desk phones and mobile SIP apps (Plus, TLS/SRTP only), UK calls, fraud rules |
 | Call handling | Transfer (straight away, or talk first), hold with your hold music, park and pick up from any phone, ring your mobile too (follow-me, with "press 1") |
-| Routing | Numbers with opening hours, ring groups, IVR menus, voicemail fallback |
+| Routing | Numbers with opening hours, ring groups, IVR menus, call queues with hold music (Plus), voicemail fallback |
 | Voice server | Bundled FreeSWITCH config; any UK SIP trunk (IP-authenticated or registration), several provider addresses per trunk |
 | Voicemail & recording | Voicemail to email, call recording with spoken notice, encrypted storage, retention |
-| AI (your own provider) | Transcripts and summaries (Plus); action items and sentiment (Pro) |
+| AI (your own provider) | Transcripts and summaries (Plus); action items, sentiment, search across calls and an AI receptionist (Pro) |
 | Safety | Authenticated webhooks, loop protection, emergency calls never blocked or recorded, operator acknowledgement record |
 
 ## Requirements
@@ -119,6 +119,39 @@ billed to you by your AI provider; the app never runs models itself.
 Transcripts are treated as untrusted data in the prompt, and replies are
 strictly parsed, so a caller cannot steer the AI through what they say.
 
+### Search across calls (Pro)
+
+**Voicemail & recordings → Search.** Finds calls and voicemails by what was
+said (transcripts, summaries and action items) or by part of the caller's
+number, best match first. **Ask AI** sends the best matches, as summaries and
+transcript excerpts, to your summaries provider with your question; the
+answer cites the calls it used. Everyone only searches what they can already
+see: admins see everything, others their own calls and their mailboxes.
+Recordings past their retention period are never included.
+
+### AI receptionist (Pro)
+
+**Admin → AI receptionists.** A receptionist answers in plain conversation.
+It can do three things:
+
+- Tell callers what you've written under "What it can tell callers", and
+  nothing else.
+- Put callers through to one of up to 8 options you set: a name, when to
+  choose it, and a destination.
+- Take a written message for a mailbox. The message is emailed like a
+  voicemail.
+
+Choose it as a number's destination, an IVR option or a fallback, like
+anything else.
+
+Each time the caller speaks, the audio goes to your transcription provider
+and the conversation to your summaries provider, so both must be set up.
+Expect a pause of a second or two between turns. The AI can only choose
+among the options you set; it can never dial anything else, and what callers
+say is treated as data. If anything goes wrong (no reply, an unusable
+answer, the provider is down, or the caller stays silent twice), the caller
+goes to the receptionist's fallback.
+
 ### SIP trunks
 
 **Admin → SIP trunks → Connect a trunk.** Pick your provider and enter:
@@ -202,6 +235,39 @@ a transfer that can't go through comes back to them. **999 and 112 calls are
 never transferred or parked**: they go straight back to the caller.
 
 The voice server needs `mod_valet_parking` (see [docs/VOICE-SERVER.md](docs/VOICE-SERVER.md)).
+
+### Live wallboard (Pro)
+
+**Admin → Live wallboard.** A page for a screen on the wall, updated every 5
+seconds:
+
+- **Today:** live calls, callers waiting, calls in, calls out, missed calls and
+  talk time.
+- **Each queue:** callers waiting, the longest wait, agents logged in (and how
+  many are on a call), and today's answered, abandoned and overflowed calls.
+- **Calls in progress:** who's on each, and for how long.
+- **Everyone:** whether they're free or on a call, which queues they're in, and
+  their calls today.
+
+**Full screen** fills the display. Admins only. Who is on a call comes from the
+voice server; if it can't be reached, everything else still updates and people
+show as unknown.
+
+### Call queues
+
+Plus and Pro. A queue holds callers in turn: they hear its greeting, then hold
+music (the queue's own or the company's) and their place in the queue ("You are
+number 2") when they join, when it moves and every minute. When it's their turn,
+the queue's free agents ring together while the caller keeps hearing the music;
+an agent already on a call is skipped. If nobody answers, the caller holds again
+and is rung again. After the queue's longest wait, or straight away when no
+agent is logged in (unless you untick that), the caller goes to the queue's
+overflow: voicemail, a person, a ring group, a menu or another queue.
+
+Point a number, menu option or fallback at a queue, or give it an extension to
+dial or transfer calls to. Agents log in and out on their dashboard, or by
+dialling **`*45`** from any of their phones (all their queues at once); admins
+can log anyone in or out on the queue's page, which also shows who's waiting.
 
 ### Ring my mobile too (follow-me)
 

@@ -9,6 +9,26 @@ version (1.1.0) adds features, and a major version (2.0.0) may need changes on y
 
 ## Unreleased
 
+## 1.2.0 (7 November 2026)
+
+- **Live wallboard (Pro):** live calls, queues, who's free and today's totals on one page for admins, updated every 5
+  seconds, with a full-screen mode for a wall display.
+- **Call queues (Plus and Pro):** callers wait their turn with hold music and hear their place in the queue, while the
+  free agents logged in to it are rung. After the longest wait, or when nobody is logged in, calls go to an overflow
+  such as voicemail. Agents log in and out on their dashboard or by dialling `*45`.
+- **Powered by QuaverDesk:** an install given a name of its own (`APP_NAME`) says "Powered by QuaverDesk" at the
+  foot of its pages, unless its licence includes own branding.
+- **Search across calls (Pro):** search what was said in calls and voicemails, or ask your AI provider a question
+  about them, from Voicemail & recordings. People only search what they can already see.
+- **AI receptionist (Pro):** answers calls in conversation, puts callers through to options you choose, or takes a
+  written message for a mailbox. Uses your own transcription and summaries providers.
+- Upgrade prompts for Pro-only features now say they're on the Pro plan.
+
+## 1.1.0 (6 November 2026)
+
+- **DECT bases:** Yealink W70B bases are set up automatically. Every handset shares the base's extension, or up to
+  10 handsets can each have their own (added as handsets on the base).
+
 ## 1.0.0 (1 November 2026)
 
 The first numbered release. It includes everything in the [README](README.md), and these recent additions:

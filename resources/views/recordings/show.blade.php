@@ -17,6 +17,8 @@
         <h2>Listen</h2>
         @if ($recording->hasAudio())
             <audio controls preload="none" src="{{ route('recordings.audio', $recording) }}" style="width:100%"></audio>
+        @elseif ($recording->status === \App\Models\Recording::MESSAGE)
+            <p class="muted">A message the AI receptionist took. There's no audio: the conversation is below.</p>
         @elseif ($recording->status === 'pending')
             <p class="muted">Still being saved. Refresh in a moment.</p>
         @elseif ($recording->status === 'failed')

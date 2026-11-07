@@ -19,6 +19,7 @@
         @endif
         @yield('content')
     </div>
+    @poweredby <p class="small muted" style="text-align:center">Powered by QuaverDesk</p> @endpoweredby
 </div>
 @stack('scripts')
 </body>

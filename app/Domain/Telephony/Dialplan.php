@@ -17,6 +17,7 @@ use Closure;
  *     number (0…). ** parks a call; **1 to **9 park on, or pick up from, that slot.
  *     *0 records a sound (admins only; see VoiceController). *00 is your
  *     voicemail: play messages, record greetings (VoicemailMenuController).
+ *     *45 logs you in to your call queues, or out of them.
  *     blf-… is a busy lamp key pressed: the colleague it watches.
  *  3. International and premium-rate destinations are blocked unless an
  *     admin allowed them.
@@ -34,7 +35,8 @@ final class Dialplan
     /**
      * @param  list<string>  $allowedInternationalPrefixes  e.g. ['+353'] (E.164 prefixes an admin enabled)
      * @param  ?Closure(string): ?string  $extensions  extension or busy lamp address => that person's
-     *                                               identity (user-12), a ring group (ring_group:3), or null
+     *                                               identity (user-12), a ring group (ring_group:3),
+     *                                               a call queue (queue:2), or null
      */
     public function __construct(
         private readonly array $allowedInternationalPrefixes = [],
@@ -72,6 +74,9 @@ final class Dialplan
         if ($to === '*00') {
             return DialDecision::voicemail();
         }
+        if ($to === '*45') {
+            return DialDecision::queueLogin();
+        }
 
         // Desk-phone shortcut: *12 calls colleague user-12.
         if (preg_match('/^\*(\d{1,9})$/', $to, $m)) {
@@ -90,6 +95,7 @@ final class Dialplan
             return match (true) {
                 $identity === null => DialDecision::reject("There is no extension {$digits}."),
                 str_starts_with($identity, 'ring_group:') => DialDecision::ringGroup((int) substr($identity, 11)),
+                str_starts_with($identity, 'queue:') => DialDecision::queue((int) substr($identity, 6)),
                 default => DialDecision::client($identity),
             };
         }

@@ -98,4 +98,23 @@ class HttapiRendererTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
         $this->render((new CallScript())->play('/etc/passwd'));
     }
+
+    public function test_queue_hold_music_plays_for_a_while_then_carries_on(): void
+    {
+        $xml = $this->render((new CallScript())->hold('https://app.test/voice/sounds/a.wav', 20)->redirect('https://app.test/queue'));
+        $this->assertStringContainsString('<execute application="set" data="playback_timeout_sec=20"/><playback file="https://app.test/voice/sounds/a.wav"/>'
+            .'<execute application="unset" data="playback_timeout_sec"/><continue action="https://app.test/queue"/>', $xml);
+
+        // No music: silence for as long.
+        $this->assertStringContainsString('<execute application="sleep" data="5000"/>', $this->render((new CallScript())->hold(null, 5)->redirect('https://app.test/q')));
+    }
+
+    public function test_agents_ring_while_the_caller_hears_hold_music(): void
+    {
+        $xml = $this->render((new CallScript())->dial([DialTarget::client('user-4')], ['timeout' => 15, 'holdMusic' => 'https://app.test/m.wav', 'action' => 'https://app.test/q']));
+
+        $this->assertStringContainsString('<execute application="set" data="ringback=https://app.test/m.wav"/><execute application="set" data="transfer_ringback=https://app.test/m.wav"/>', $xml);
+        $this->expectException(InvalidArgumentException::class);
+        $this->render((new CallScript())->dial([DialTarget::client('user-4')], ['holdMusic' => 'https://app.test/m.wav,${evil}']));
+    }
 }

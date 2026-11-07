@@ -11,12 +11,15 @@ namespace App\Domain\Calls;
  *   ['play', url]                         an audio file (an uploaded greeting)
  *   ['dial', list<DialTarget>, options]   options: timeout, callerId, action (gets the dial outcome),
  *                                                  maxSeconds (hang up once answered this long),
+ *                                                  holdMusic (the caller hears it, not ringing, while it rings),
  *                                                  record (bool), recordingStatusCallback (gets the audio)
  *   ['gather', prompt, options]           options: numDigits, timeout, action, sound (a URL played
  *                                         instead of speaking the prompt). Ends the script: the
  *                                         caller's key press (or nothing, on timeout) goes to action
- *   ['record', options]                   options: maxLength, action. Ends the script: the
- *                                         recording (if any) goes to action
+ *   ['record', options]                   options: maxLength, action, listen (no beep, and stops
+ *                                         soon after the caller stops talking: for a spoken reply).
+ *                                         Ends the script: the recording (if any) goes to action
+ *   ['hold', url|null, seconds]            hold music (or silence) for at most this long
  *   ['park', lot, slot, options]          park the call on a slot, or pick up the call parked there.
  *                                         options (parking only): holdMusic, returnTo (dialled again,
  *                                         in the transfer context, if nobody picks up), waitSeconds
@@ -75,10 +78,18 @@ final class CallScript
         return $this;
     }
 
-    /** @param array{maxLength?: int, action: string} $options */
+    /** @param array{maxLength?: int, action: string, listen?: bool} $options */
     public function record(array $options): self
     {
         $this->steps[] = ['record', $options];
+
+        return $this;
+    }
+
+    /** Hold music (or silence, with no URL) for up to $seconds; the script then carries on. */
+    public function hold(?string $url, int $seconds): self
+    {
+        $this->steps[] = ['hold', $url, $seconds];
 
         return $this;
     }

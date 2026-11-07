@@ -2,9 +2,12 @@
 
 namespace App\Support;
 
+use App\Domain\Licensing\Feature;
 use App\Domain\Routing\Destination;
+use App\Models\CallQueue;
 use App\Models\IvrMenu;
 use App\Models\Mailbox;
+use App\Models\Receptionist;
 use App\Models\RingGroup;
 use App\Models\User;
 
@@ -21,6 +24,10 @@ class DestinationCatalog
                 ->mapWithKeys(fn (RingGroup $g) => ["ring_group:{$g->id}" => $g->name])->all(),
             'IVR menus' => IvrMenu::query()->orderBy('name')->get()
                 ->mapWithKeys(fn (IvrMenu $m) => ["ivr:{$m->id}" => $m->name])->all(),
+            'Call queues' => app(LicenceManager::class)->allows(Feature::CallQueues) ? CallQueue::query()->orderBy('name')->get()
+                ->mapWithKeys(fn (CallQueue $q) => ["queue:{$q->id}" => "Queue: {$q->name}"])->all() : [],
+            ...(app(LicenceManager::class)->allows(Feature::AiReceptionist) ? ['AI receptionists' => Receptionist::query()->orderBy('name')->get()
+                ->mapWithKeys(fn (Receptionist $r) => ["receptionist:{$r->id}" => "AI receptionist: {$r->name}"])->all()] : []),
             'Voicemail' => Mailbox::query()->orderBy('name')->get()
                 ->mapWithKeys(fn (Mailbox $m) => ["voicemail:{$m->id}" => "Voicemail: {$m->name}"])->all(),
             'Other' => ['hangup' => 'Play "unavailable" message and hang up'],
@@ -39,6 +46,8 @@ class DestinationCatalog
             Destination::RING_GROUP => RingGroup::query()->whereKey($d->id)->exists(),
             Destination::IVR => IvrMenu::query()->whereKey($d->id)->exists(),
             Destination::VOICEMAIL => Mailbox::query()->whereKey($d->id)->exists(),
+            Destination::QUEUE => CallQueue::query()->whereKey($d->id)->exists(),
+            Destination::RECEPTIONIST => Receptionist::query()->whereKey($d->id)->exists(),
             Destination::HANGUP => true,
         };
     }

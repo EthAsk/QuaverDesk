@@ -28,6 +28,7 @@ Any other SIP phone or app still works: you type its settings in by hand
   | Make | Models | File it asks for |
   | --- | --- | --- |
   | Yealink | T-series (T3x, T4x, T5x) | `<mac>.cfg` |
+  | Yealink DECT | W70B base, with its handsets (such as W73H, W78H, W59R, W57R, W56H) | `<mac>.cfg` (the base's MAC) |
   | Grandstream | GRP26xx | `cfg<mac>.xml` |
   | Fanvil | X series (X3U to X7) | `<mac>.cfg` |
 
@@ -87,7 +88,7 @@ own network. Tick **Filter LAN addresses** to allow only the listed addresses.
 
 Copy the values from the **Automatic set-up** card. Each one has a copy button.
 
-- **Yealink:** web page → *Settings → Auto Provision*: enter the **Server URL**,
+- **Yealink** (desk phones and DECT bases): web page → *Settings → Auto Provision*: enter the **Server URL**,
   **User Name** and **Password**, then press *Auto Provision Now*.
 - **Grandstream (GRP):** web page → *Maintenance → Upgrade and Provisioning*:
   1. Set *Config Upgrade Via* to HTTPS.
@@ -192,6 +193,37 @@ presence.
 If you change the app key (`APP_KEY`), everyone's address changes. Phones set
 up automatically get the new ones at their next check. Phones set up by hand
 need re-entering.
+
+## DECT bases and their handsets
+
+Add a Yealink DECT base like any other phone, with **Yealink DECT base
+(W70B)** as its make and the MAC address from the label on the **base**. The
+base gets one account, the person you add it for, and **every handset
+registered to it shares that extension** and rings together. For most sites
+that's all you need: register the handsets to the base (see the handset's
+manual) and they're ready.
+
+To give a handset its own extension, add it under **Add a phone**: choose its
+person and a name, and pick the base under **Or a handset on a DECT base**.
+Leave the lock, make and MAC address blank. It becomes the base's next free
+handset (2, 3, …, up to 10, counting the base's own). QuaverDesk gives it
+its own account on the base and tells the base to fetch its settings straight
+away.
+
+- **Handset numbers.** The base numbers handsets in the order they're
+  registered to it: the first is handset 1 (the base's own extension), the
+  second handset 2, and so on. The base's web page lists them. Match the
+  numbers on the admin page to the handsets you hand out.
+- **Lock.** A handset with its own extension signs in through its base, so the
+  base's lock applies to it and it has none of its own.
+- **Removing.** Removing a handset turns its account off at the base's next
+  download, and its number is used for the next handset added. Removing the
+  base removes its handsets too. A base can't be changed to another make
+  while it has handsets.
+- **No busy lamp keys.** DECT handsets don't have them, so they're not shown
+  for bases or handsets.
+- **Managed accounts.** QuaverDesk sets accounts 1 to 10 on the base: ones not
+  in use are turned off. Accounts entered on the base by hand are replaced.
 
 ## Phones without a person, and phones that can't call out
 

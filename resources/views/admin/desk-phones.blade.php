@@ -17,6 +17,7 @@
             <h2>Phones</h2>
             @error('allowed_ips', 'lock')<div class="flash bad">{{ $message }}</div>@enderror
             @error('mac', 'provisioning')<div class="flash bad">{{ $message }}</div>@enderror
+            @error('base_id')<div class="flash bad">{{ $message }}</div>@enderror
             <p class="small muted">Service address: <code>{{ $service['domain'] }}</code>. To call a colleague from a phone or app, dial * then their number, e.g. <strong>*12</strong> for user-12.</p>
 
             @if ($phones->isEmpty())
@@ -27,7 +28,10 @@
                     <tbody>
                     @foreach ($phones as $p)
                         <tr>
-                            <td>{{ $p->label }}</td>
+                            <td>
+                                {{ $p->label }}
+                                @if ($p->base_id)<div class="small muted">Handset {{ $p->handset }} on {{ $phones->firstWhere('id', $p->base_id)?->label }}</div>@endif
+                            </td>
                             <td>
                                 @if ($online === null)
                                     <span class="muted small">Unknown</span>
@@ -41,6 +45,9 @@
                             <td>{{ $p->user?->name }}</td>
                             <td><code>{{ $p->sip_username }}</code></td>
                             <td>
+                                @if ($p->base_id)
+                                    <span class="small muted">As its base</span>
+                                @else
                                 <form method="POST" action="{{ route('admin.desk-phones.lock', $p) }}" class="rename">
                                     @csrf @method('PATCH')
                                     <input type="text" name="allowed_ips" value="{{ $p->allowed_ips ? $p->allowedIpsLabel() : '' }}" placeholder="Anywhere"
@@ -50,13 +57,16 @@
                                     </label>
                                     <button class="btn ghost small" type="submit">Save</button>
                                 </form>
+                                @endif
                             </td>
                             <td class="row">
                                 <form method="POST" action="{{ route('admin.desk-phones.reveal', $p) }}">
                                     @csrf
                                     <button class="btn ghost" type="submit">Show settings</button>
                                 </form>
-                                <form method="POST" action="{{ route('admin.desk-phones.destroy', $p) }}" data-confirm="Remove {{ $p->label }}? It will stop working immediately.">
+                                @php($others = $phones->where('base_id', $p->id)->count())
+                                <form method="POST" action="{{ route('admin.desk-phones.destroy', $p) }}"
+                                      data-confirm="Remove {{ $p->label }}{{ $others ? ' and its '.$others.' other '.($others === 1 ? 'handset' : 'handsets') : '' }}? {{ $others ? 'They' : 'It' }} will stop working immediately.">
                                     @csrf @method('DELETE')
                                     <button class="btn ghost" type="submit">Remove</button>
                                 </form>
@@ -64,6 +74,10 @@
                         </tr>
                         <tr>
                             <td colspan="6" class="small" style="border-top:0;padding-top:0">
+                                @if ($p->base_id)
+                                    <span class="muted">Set up by its DECT base: this is the base's handset {{ $p->handset }} (the base numbers handsets in the order they're registered to it).
+                                        To change its settings, use the base's line.</span>
+                                @else
                                 <div class="row" style="flex-wrap:wrap;gap:8px">
                                     <form method="POST" action="{{ route('admin.desk-phones.provisioning', $p) }}" class="row">
                                         @csrf @method('PATCH')
@@ -119,6 +133,14 @@
                                         </form>
                                     @endif
                                 </div>
+                                @if ($p->isDectBase())
+                                    <p class="muted" style="margin:8px 0 0">DECT base. Handset 1 (the first registered) is {{ $p->user?->name }}'s, on this phone's extension.
+                                        @if ($others)
+                                            {{ $phones->where('base_id', $p->id)->map(fn ($h) => 'Handset '.$h->handset.' is '.$h->label)->implode('; ') }}.
+                                        @endif
+                                        Other handsets share handset 1's extension. To give one its own, add it under <strong>Add a phone</strong> as a handset on this base
+                                        (up to {{ \App\Models\DeskPhone::MAX_HANDSETS }} in all). DECT handsets have no busy lamp keys.</p>
+                                @else
                                 @php($watched = $p->blfColleagues())
                                 <details style="margin-top:8px" @if ($errors->keys->any() && old('phone') == $p->id) open @endif>
                                     <summary>Busy lamp keys ({{ $watched->count() ?: 'none' }}){{ $watched->isNotEmpty() ? ': '.$watched->pluck('name')->implode(', ') : '' }}</summary>
@@ -152,6 +174,7 @@
                                         </table>
                                     @endif
                                 </details>
+                                @endif
                                 @if ($revealAdmin === $p->id && $p->admin_password)
                                     <div class="flash warn" style="margin:8px 0 0">
                                         Admin login for {{ $p->label }}'s web page (recorded in the phone log). It takes effect when the phone next fetches its settings, and is also the password for the phone's other logins (Yealink <code>user</code> and <code>var</code>, Grandstream <code>user</code>, Fanvil <code>guest</code>):
@@ -161,6 +184,7 @@
                                                 <td><button class="btn ghost small" type="button" data-copy="{{ $p->admin_password }}">Copy</button></td></tr>
                                         </table>
                                     </div>
+                                @endif
                                 @endif
                             </td>
                         </tr>
@@ -234,6 +258,19 @@
                     <div class="small muted">On the label on the back of the phone.</div>
                 </div>
             </div>
+            @if ($bases->isNotEmpty())
+                <div class="field">
+                    <label for="base_id">Or a handset on a DECT base, with its own extension (optional)</label>
+                    <select id="base_id" name="base_id">
+                        <option value="">No</option>
+                        @foreach ($bases as $b)
+                            <option value="{{ $b->id }}" @selected(old('base_id') == $b->id)>{{ $b->label }}</option>
+                        @endforeach
+                    </select>
+                    <div class="small muted">The base sets the handset up and its sign-in lock applies, so leave the lock, make and MAC address blank.
+                        Handsets not added here share the base's own extension.</div>
+                </div>
+            @endif
             <button class="btn" type="submit">Add phone</button>
         </form>
 
@@ -257,7 +294,7 @@
                     <code>{{ preg_replace('#^https://#', '', $provisioning['url']) }}</code>
                     <button class="btn ghost small" type="button" data-copy="{{ preg_replace('#^https://#', '', $provisioning['url']) }}">Copy</button></p>
                 <ul class="small" style="margin-top:10px">
-                    <li><strong>Yealink:</strong> web page → Settings → Auto Provision: Server URL, User Name, Password. Then Auto Provision Now.</li>
+                    <li><strong>Yealink</strong> (desk phones and DECT bases): web page → Settings → Auto Provision: Server URL, User Name, Password. Then Auto Provision Now.</li>
                     <li><strong>Grandstream (GRP):</strong> web page → Maintenance → Upgrade and Provisioning: Config Upgrade Via HTTPS, Config Server Path
                         (the address without <code>https://</code>), HTTP/HTTPS User Name and Password. Then Provision.</li>
                     <li><strong>Fanvil (X series):</strong> web page → System → Auto Provision: Server URL, User Name, Password. Then Apply.</li>

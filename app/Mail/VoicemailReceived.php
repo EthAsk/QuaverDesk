@@ -22,7 +22,9 @@ class VoicemailReceived extends Mailable
     {
         $from = $this->recording->from ?: 'an unknown number';
 
-        return new Envelope(subject: "Voicemail from {$from} ({$this->mailbox->name})");
+        $what = $this->recording->status === Recording::MESSAGE ? 'Message' : 'Voicemail';
+
+        return new Envelope(subject: "{$what} from {$from} ({$this->mailbox->name})");
     }
 
     public function content(): Content

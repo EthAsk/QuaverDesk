@@ -23,6 +23,9 @@ final class InboundRouter
     public const MSG_UNAVAILABLE = 'Sorry, nobody is available to take your call. Please try again later. Goodbye.';
     public const MSG_INVALID = 'Sorry, that is not a valid option.';
     public const MSG_VOICEMAIL_THANKS = 'Thank you. Your message has been recorded. Goodbye.';
+    /** The longest a caller can talk to the AI receptionist in one go. */
+    public const LISTEN_SECONDS = 25;
+
     public const DEFAULT_DISCLOSURE = 'This call may be recorded and transcribed for training and quality purposes.';
 
     public function __construct(
@@ -65,6 +68,9 @@ final class InboundRouter
             Destination::RING_GROUP => $this->toRingGroup($to, $ctx),
             Destination::IVR => $this->toIvr($to, $ctx),
             Destination::VOICEMAIL => $this->toVoicemail($to),
+            // Queues need the call itself (its place in line), so they run on their own webhook.
+            Destination::QUEUE => (new CallScript())->redirect($this->urls->queue($to->withStep(0), $ctx)),
+            Destination::RECEPTIONIST => $this->toReceptionist($to, $ctx),
             default => $this->unavailable(),
         };
     }
@@ -191,6 +197,32 @@ final class InboundRouter
             ]);
     }
 
+    /**
+     * An AI receptionist greets the caller and listens. Each reply goes to
+     * the receptionist webhook (ReceptionistRunner). Without the plan or an
+     * AI provider, callers go straight to its fallback.
+     */
+    private function toReceptionist(Destination $to, RoutingContext $ctx): CallScript
+    {
+        $config = $this->directory->receptionist($to->id);
+        if ($config === null) {
+            return $this->unavailable();
+        }
+        if (! $config->ready) {
+            return $this->route($config->fallback ?? Destination::hangup(), $ctx->next());
+        }
+
+        return (new CallScript())
+            ->say($config->greeting)
+            ->append(self::listen($this->urls->receptionist($to->withStep(0), $ctx)));
+    }
+
+    /** Records what the caller says next and sends it to $action. */
+    public static function listen(string $action): CallScript
+    {
+        return (new CallScript())->record(['maxLength' => self::LISTEN_SECONDS, 'action' => $action, 'listen' => true]);
+    }
+
     /** @param array<string, mixed> $options */
     private function dialOptions(RoutingContext $ctx, array $options): array
     {
@@ -202,7 +234,7 @@ final class InboundRouter
         return $options;
     }
 
-    private function unavailable(): CallScript
+    public function unavailable(): CallScript
     {
         return (new CallScript())->say(self::MSG_UNAVAILABLE)->hangup();
     }

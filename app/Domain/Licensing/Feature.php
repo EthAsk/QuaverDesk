@@ -20,6 +20,10 @@ enum Feature: string
     case AiSentiment = 'ai_sentiment';
     case VoicemailAi = 'voicemail_ai';
     case Passkeys = 'passkeys';
+    case CallQueues = 'call_queues';
+    case LiveWallboard = 'live_wallboard';
+    case AiSearch = 'ai_search';
+    case AiReceptionist = 'ai_receptionist';
 
     public function label(): string
     {
@@ -35,6 +39,10 @@ enum Feature: string
             self::AiSentiment => 'AI sentiment',
             self::VoicemailAi => 'Voicemail transcripts and summaries',
             self::Passkeys => 'Passkey sign-in',
+            self::CallQueues => 'Call queues',
+            self::LiveWallboard => 'Live wallboard',
+            self::AiSearch => 'AI search across calls',
+            self::AiReceptionist => 'AI receptionist',
         };
     }
 }

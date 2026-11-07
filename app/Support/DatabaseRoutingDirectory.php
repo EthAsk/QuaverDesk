@@ -10,6 +10,9 @@ use App\Domain\Routing\Destination;
 use App\Domain\Routing\IvrConfig;
 use App\Domain\Routing\MailboxConfig;
 use App\Models\Mailbox;
+use App\Models\Receptionist;
+use App\Ai\AiSettings;
+use App\Domain\Routing\ReceptionistConfig;
 use App\Domain\Routing\RingGroupConfig;
 use App\Domain\Routing\RoutingDirectory;
 use App\Models\DeskPhone;
@@ -76,8 +79,13 @@ class DatabaseRoutingDirectory implements RoutingDirectory
         ));
     }
 
-    /** Softphone (unless desk phones only); desk phones and mobile apps too on Plus once the desk phone service is set up. */
-    private function targetsFor(User $user): array
+    /**
+     * Softphone (unless desk phones only); desk phones and mobile apps too on
+     * Plus once the desk phone service is set up. Never their mobile (see userTargets).
+     *
+     * @return list<DialTarget>
+     */
+    public function targetsFor(User $user): array
     {
         if ($user->isForwardOnly()) {
             return [];
@@ -108,6 +116,34 @@ class DatabaseRoutingDirectory implements RoutingDirectory
         $box = Mailbox::query()->with('greetingSound')->find($id);
 
         return $box ? new MailboxConfig($box->greeting, max(10, min(300, (int) $box->max_seconds)), $box->greetingSound?->url()) : null;
+    }
+
+    public function receptionist(int $id): ?ReceptionistConfig
+    {
+        $r = Receptionist::query()->find($id);
+        if ($r === null) {
+            return null;
+        }
+
+        $routes = [];
+        foreach (array_slice((array) $r->routes, 0, Receptionist::MAX_ROUTES) as $route) {
+            $to = is_array($route) ? Destination::parse($route['to'] ?? null) : null;
+            if ($to !== null && filled($route['name'] ?? null)) {
+                $routes[] = ['name' => (string) $route['name'], 'about' => (string) ($route['about'] ?? ''), 'to' => $to];
+            }
+        }
+        $ai = app(AiSettings::class);
+
+        return new ReceptionistConfig(
+            business: (string) ($r->business ?: $r->name),
+            greeting: $r->greeting,
+            about: (string) $r->about,
+            routes: $routes,
+            mailboxId: $r->mailbox_id,
+            fallback: Destination::parse($r->fallback),
+            maxTurns: max(2, min(10, (int) $r->max_turns)),
+            ready: $this->licences->allows(Feature::AiReceptionist) && $ai->transcriptionReady() && $ai->analysisReady(),
+        );
     }
 
     public function ringGroup(int $id): ?RingGroupConfig

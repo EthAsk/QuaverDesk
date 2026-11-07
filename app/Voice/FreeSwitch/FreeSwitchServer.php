@@ -184,6 +184,24 @@ class FreeSwitchServer implements VoiceServer
         return $out;
     }
 
+    public function busyPhones(): array
+    {
+        $json = json_decode($this->api(fn (EventSocket $esl) => $esl->api('show channels as json')), true);
+        if (! is_array($json)) {
+            throw new RuntimeException('The voice server sent an unreadable list of calls.');
+        }
+
+        // A phone's own leg is named after it: sofia/internal/user-12@… or sofia/internal/u12-ab12cd@….
+        $busy = [];
+        foreach ($json['rows'] ?? [] as $row) {
+            if (preg_match('#^sofia/[a-z]+/(user-\d{1,9}|u\d{1,9}-[a-f0-9]{6})@#', (string) ($row['name'] ?? ''), $m)) {
+                $busy[$m[1]] = true;
+            }
+        }
+
+        return array_keys($busy);
+    }
+
     /** @param callable(EventSocket): string $command */
     private function api(callable $command): string
     {

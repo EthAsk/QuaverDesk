@@ -36,12 +36,13 @@ enum Plan: string
             Feature::AiSummaries,
             Feature::VoicemailAi,
             Feature::Passkeys,
+            Feature::CallQueues,
         ];
 
         return match ($this) {
             self::Free => $free,
             self::Plus => $plus,
-            self::Pro => [...$plus, Feature::AiActionItems, Feature::AiSentiment],
+            self::Pro => [...$plus, Feature::AiActionItems, Feature::AiSentiment, Feature::LiveWallboard, Feature::AiSearch, Feature::AiReceptionist],
         };
     }
 

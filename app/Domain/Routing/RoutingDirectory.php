@@ -23,4 +23,7 @@ interface RoutingDirectory
     public function ivr(int $id): ?IvrConfig;
 
     public function mailbox(int $id): ?MailboxConfig;
+
+    /** An AI receptionist (Pro); null if it no longer exists. */
+    public function receptionist(int $id): ?ReceptionistConfig;
 }

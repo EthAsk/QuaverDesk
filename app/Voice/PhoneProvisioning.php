@@ -18,7 +18,7 @@ use Illuminate\Support\Str;
  * rest are cleared. Key 1 stays the phone's own line.
  *
  * Files phones ask for:
- *   Yealink      <mac>.cfg      (also y0000000000xx.cfg, .boot: not served)
+ *   Yealink      <mac>.cfg      (also y0000000000xx.cfg, .boot: not served; DECT bases the same)
  *   Fanvil       <mac>.cfg      (newer firmware's XML format; also f0<model>.cfg: not served)
  *   Grandstream  cfg<mac>.xml   (GRP series, named settings)
  * Yealink and Fanvil ask for the same name: the phone registered with that MAC says which.
@@ -87,7 +87,7 @@ class PhoneProvisioning
     /** Which brands answer to a file type. */
     public static function brandsFor(string $type): array
     {
-        return $type === 'xml' ? ['grandstream'] : ['yealink', 'fanvil'];
+        return $type === 'xml' ? ['grandstream'] : ['yealink', 'yealink_dect', 'fanvil'];
     }
 
     /** @return array{0: string, 1: string} content type and file */
@@ -95,24 +95,72 @@ class PhoneProvisioning
     {
         $domain = (string) (DeskPhone::service()['domain'] ?? '');
         $admin = $phone->admin_password ?: tap($phone->newAdminPassword(), fn () => $phone->save());
-        $v = [
-            'domain' => $domain,
-            'user' => $phone->sip_username,
-            'password' => $phone->sip_password,
-            'name' => $phone->user?->name ?? $phone->label,
-            'label' => trim(($phone->user?->extension ? $phone->user->extension.' ' : '').($phone->user?->name ?? $phone->label)),
-            'admin' => $admin,
-            'mac' => $phone->mac,
-        ];
+        $v = self::account($phone, $domain) + ['admin' => $admin, 'mac' => $phone->mac];
         // null: leave the phone's keys alone. Otherwise one per colleague: the address it watches and dials, and its label.
         $keys = $phone->blf_keys === null ? null : $phone->blfColleagues()->take(DeskPhone::MAX_BLF_KEYS)
             ->map(fn ($u) => ['value' => $u->blfId(), 'label' => trim($u->name.' '.$u->extension)])->all();
 
         return match ($phone->brand) {
             'yealink' => ['text/plain; charset=UTF-8', $this->yealink($v, $keys)],
+            'yealink_dect' => ['text/plain; charset=UTF-8', $this->yealinkDect($v, $phone, $domain)],
             'grandstream' => ['application/xml; charset=UTF-8', $this->grandstream($v, $keys)],
             'fanvil' => ['application/xml; charset=UTF-8', $this->fanvil($v, $keys)],
         };
+    }
+
+    /** @return array{domain: string, user: string, password: string, name: string, label: string} a phone's SIP account */
+    private static function account(DeskPhone $phone, string $domain): array
+    {
+        return [
+            'domain' => $domain,
+            'user' => $phone->sip_username,
+            'password' => $phone->sip_password,
+            'name' => $phone->user?->name ?? $phone->label,
+            'label' => trim(($phone->user?->extension ? $phone->user->extension.' ' : '').($phone->user?->name ?? $phone->label)),
+        ];
+    }
+
+    /** Text for one Yealink setting: no control characters, and no # (which starts a comment). */
+    private static function yealinkText(string $s): string
+    {
+        return trim(preg_replace('/[\x00-\x1f\x7f#]+/', ' ', $s) ?? '');
+    }
+
+    /**
+     * Yealink account $n (the same settings on desk phones and DECT bases).
+     *
+     * @param  array<string, string>  $v
+     * @return list<string>
+     */
+    private static function yealinkAccount(int $n, array $v): array
+    {
+        return [
+            "account.{$n}.enable = 1",
+            "account.{$n}.label = ".self::yealinkText($v['label']),
+            "account.{$n}.display_name = ".self::yealinkText($v['name']),
+            "account.{$n}.auth_name = ".$v['user'],
+            "account.{$n}.user_name = ".$v['user'],
+            "account.{$n}.password = ".$v['password'],
+            "account.{$n}.sip_server.1.address = ".$v['domain'],
+            "account.{$n}.sip_server.1.port = 5061",
+            "account.{$n}.sip_server.1.transport_type = 2", // TLS
+            "account.{$n}.srtp_encryption = 2", // compulsory
+            "voice_mail.number.{$n} = *00",
+        ];
+    }
+
+    /** Settings every Yealink gets, desk phone or DECT base. @return list<string> */
+    private static function yealinkCommon(): array
+    {
+        return [
+            'static.security.trust_certificates = 1',
+            'static.auto_provision.repeat.enable = 1',
+            'static.auto_provision.repeat.minutes = '.self::RECHECK_MINUTES,
+            'sip.notify_reboot_enable = 0', // check-sync fetches settings; reboots only if asked
+            'local_time.time_zone = 0',
+            'local_time.time_zone_name = United Kingdom(London)',
+            'local_time.ntp_server1 = '.self::NTP,
+        ];
     }
 
     /**
@@ -121,21 +169,11 @@ class PhoneProvisioning
      */
     private function yealink(array $v, ?array $keys): string
     {
-        $c = fn (string $s) => trim(preg_replace('/[\x00-\x1f\x7f#]+/', ' ', $s) ?? '');
+        $c = self::yealinkText(...);
         $lines = [
             '#!version:1.0.0.1',
             '## '.config('app.name').': settings for this phone. Changes made on the phone are replaced at its next check.',
-            'account.1.enable = 1',
-            'account.1.label = '.$c($v['label']),
-            'account.1.display_name = '.$c($v['name']),
-            'account.1.auth_name = '.$v['user'],
-            'account.1.user_name = '.$v['user'],
-            'account.1.password = '.$v['password'],
-            'account.1.sip_server.1.address = '.$v['domain'],
-            'account.1.sip_server.1.port = 5061',
-            'account.1.sip_server.1.transport_type = 2', // TLS
-            'account.1.srtp_encryption = 2', // compulsory
-            'voice_mail.number.1 = *00',
+            ...self::yealinkAccount(1, $v),
             // Every web login gets the phone's password, so none is left on its default (user/user, var/var).
             'static.security.user_name.admin = admin',
             'static.security.user_password = admin:'.$v['admin'],
@@ -143,13 +181,7 @@ class PhoneProvisioning
             'static.security.user_password = user:'.$v['admin'],
             'static.security.user_name.var = var',
             'static.security.user_password = var:'.$v['admin'],
-            'static.security.trust_certificates = 1',
-            'static.auto_provision.repeat.enable = 1',
-            'static.auto_provision.repeat.minutes = '.self::RECHECK_MINUTES,
-            'sip.notify_reboot_enable = 0', // check-sync fetches settings; reboots only if asked
-            'local_time.time_zone = 0',
-            'local_time.time_zone_name = United Kingdom(London)',
-            'local_time.ntp_server1 = '.self::NTP,
+            ...self::yealinkCommon(),
             'lang.gui = English',
             'lang.wui = English',
         ];
@@ -166,6 +198,56 @@ class PhoneProvisioning
                 );
             }
         }
+
+        return implode("\n", $lines)."\n";
+    }
+
+    /**
+     * A Yealink DECT base (W70B). Its own account is account 1, used by
+     * handset 1. A handset given its own extension (see DeskPhone::handsets())
+     * gets account N and is the base's handset N, which is the Nth handset
+     * registered to it. Every other handset shares account 1, so with no
+     * handsets added all of them ring the base's person. Accounts 2 onwards
+     * not in use are turned off. DECT handsets have no busy lamp keys.
+     *
+     * @param  array<string, string>  $v
+     */
+    private function yealinkDect(array $v, DeskPhone $base, string $domain): string
+    {
+        $c = self::yealinkText(...);
+        $handsets = $base->handsets()->with('user')->get()
+            ->filter(fn (DeskPhone $h) => $h->user !== null && ! $h->user->isForwardOnly())->keyBy('handset');
+
+        $lines = [
+            '#!version:1.0.0.1',
+            '## '.config('app.name').': settings for this DECT base. Changes made on the base are replaced at its next check.',
+        ];
+        for ($n = 1; $n <= DeskPhone::MAX_HANDSETS; $n++) {
+            $handset = $handsets->get($n);
+            $account = $n === 1 ? $v : ($handset ? self::account($handset, $domain) : null);
+            if ($account === null) {
+                // A handset without its own extension: it shares the base's.
+                array_push($lines, "account.{$n}.enable = 0", "handset.{$n}.incoming_lines = 1", "handset.{$n}.dial_out_lines = 1", "handset.{$n}.dial_out_default_line = 1");
+
+                continue;
+            }
+            array_push($lines, ...self::yealinkAccount($n, $account));
+            array_push($lines,
+                "handset.{$n}.name = ".$c($n === 1 ? $base->label : $handset->label),
+                "handset.{$n}.incoming_lines = {$n}",
+                "handset.{$n}.dial_out_lines = {$n}",
+                "handset.{$n}.dial_out_default_line = {$n}",
+            );
+        }
+        array_push($lines,
+            // Both web logins get the base's password, so neither is left on its default.
+            'static.security.user_name.admin = admin',
+            'static.security.user_password = admin:'.$v['admin'],
+            'static.security.user_name.user = user',
+            'static.security.user_password = user:'.$v['admin'],
+        );
+        array_push($lines, ...self::yealinkCommon());
+        $lines[] = 'lang.wui = English';
 
         return implode("\n", $lines)."\n";
     }

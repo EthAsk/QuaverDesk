@@ -16,9 +16,29 @@ class DeskPhone extends Model
     use BelongsToTenant;
 
     /** Handsets we can set up automatically, by the files they ask for (see PhoneProvisioning). */
-    public const BRANDS = ['yealink' => 'Yealink', 'grandstream' => 'Grandstream (GRP)', 'fanvil' => 'Fanvil (X series)'];
+    public const BRANDS = ['yealink' => 'Yealink', 'yealink_dect' => 'Yealink DECT base (W70B)', 'grandstream' => 'Grandstream (GRP)', 'fanvil' => 'Fanvil (X series)'];
 
-    protected $fillable = ['user_id', 'label', 'sip_username', 'sip_password', 'allowed_ips', 'filter_lan', 'brand', 'mac'];
+    /** Makes that are DECT bases: several handsets, each of which can have its own account (see handsets()). */
+    public const DECT_BRANDS = ['yealink_dect'];
+
+    /**
+     * Handsets a DECT base can give their own extension, counting its own
+     * (handset 1). The W70B takes 10 handsets and 10 accounts.
+     */
+    public const MAX_HANDSETS = 10;
+
+    protected $fillable = ['user_id', 'base_id', 'handset', 'label', 'sip_username', 'sip_password', 'allowed_ips', 'filter_lan', 'brand', 'mac'];
+
+    protected static function booted(): void
+    {
+        // A base's handsets only exist on it: removing the base removes them too, each recorded and taken off the voice server.
+        static::deleting(function (DeskPhone $phone) {
+            foreach ($phone->handsets()->get() as $handset) {
+                DeskPhoneEvent::record(DeskPhoneEvent::REMOVED, $handset, auth()->user(), "Its DECT base, {$phone->label}, was removed.");
+                $handset->delete();
+            }
+        });
+    }
 
     protected $hidden = ['sip_password', 'admin_password'];
 
@@ -74,6 +94,36 @@ class DeskPhone extends Model
         return $this->brand !== null && $this->mac !== null;
     }
 
+    public function isDectBase(): bool
+    {
+        return in_array($this->brand, self::DECT_BRANDS, true);
+    }
+
+    /** For a handset on a DECT base: the base, which sets it up and whose lock it shares. */
+    public function base(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'base_id');
+    }
+
+    /** A DECT base's handsets with their own extension (2 onwards; the base's own account is handset 1). */
+    public function handsets(): HasMany
+    {
+        return $this->hasMany(self::class, 'base_id')->orderBy('handset');
+    }
+
+    /** The lowest free handset number on this base, or null if it is full. */
+    public function nextHandset(): ?int
+    {
+        $used = $this->handsets()->pluck('handset')->all();
+        for ($n = 2; $n <= self::MAX_HANDSETS; $n++) {
+            if (! in_array($n, $used, true)) {
+                return $n;
+            }
+        }
+
+        return null;
+    }
+
     /** A new password for the handset's own web page, sent at its next download. */
     public function newAdminPassword(): string
     {
@@ -93,6 +143,9 @@ class DeskPhone extends Model
     /** The IP addresses (CIDRs) this phone may sign in and download its settings from, or null for anywhere. */
     public function lockCidrs(): ?array
     {
+        if ($this->base_id !== null) {
+            return $this->base?->lockCidrs(); // a handset signs in through its base
+        }
         if (! $this->allowed_ips) {
             return null;
         }

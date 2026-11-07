@@ -8,11 +8,14 @@ use App\Http\Controllers\Admin\IvrMenuController;
 use App\Http\Controllers\Admin\LicenceController;
 use App\Http\Controllers\Admin\MailboxController;
 use App\Http\Controllers\Admin\NumberController;
+use App\Http\Controllers\Admin\ReceptionistController;
 use App\Http\Controllers\Admin\RecordingSettingsController;
+use App\Http\Controllers\Admin\CallQueueController;
 use App\Http\Controllers\Admin\RingGroupController;
 use App\Http\Controllers\Admin\SipTrunkController;
 use App\Http\Controllers\Admin\SoundController;
 use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\Admin\WallboardController;
 use App\Http\Controllers\Admin\VoiceSettingsController;
 use App\Http\Controllers\CallLogController;
 use App\Http\Controllers\DashboardController;
@@ -23,6 +26,7 @@ use App\Http\Controllers\Operator\AuthController as OperatorAuthController;
 use App\Http\Controllers\Operator\CompanyController;
 use App\Http\Controllers\Operator\SupportController;
 use App\Http\Controllers\PromptController;
+use App\Http\Controllers\CallSearchController;
 use App\Http\Controllers\RecordingController;
 use App\Http\Controllers\SecurityController;
 use App\Http\Controllers\SetupController;
@@ -51,11 +55,16 @@ Route::get('/manifest.webmanifest', ManifestController::class)->name('manifest')
 // auth.session: changing your password signs out your other sessions.
 Route::middleware(['auth', 'auth.session'])->group(function () {
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
+    Route::patch('/my-queues/{queue}', [DashboardController::class, 'queue'])->middleware('feature:call_queues')->name('my-queues.update');
     // Password is confirmed on entry so the two-factor buttons (POSTs) work straight away.
     Route::get('/security', SecurityController::class)->middleware('password.confirm')->name('security');
     Route::get('/calls', CallLogController::class)->name('calls');
 
     Route::get('/recordings', [RecordingController::class, 'index'])->name('recordings');
+    Route::middleware('feature:ai_search')->group(function () {
+        Route::get('/recordings/search', [CallSearchController::class, 'search'])->name('recordings.search');
+        Route::post('/recordings/search', [CallSearchController::class, 'ask'])->middleware('throttle:ai')->name('recordings.ask');
+    });
     Route::get('/recordings/{recording}', [RecordingController::class, 'show'])->name('recordings.show');
     Route::get('/recordings/{recording}/audio', [RecordingController::class, 'audio'])->name('recordings.audio');
     Route::post('/recordings/{recording}/analyse', [RecordingController::class, 'analyse'])
@@ -105,12 +114,36 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
                 Route::put('/ring-groups/{group}', [RingGroupController::class, 'update'])->name('ring-groups.update');
                 Route::delete('/ring-groups/{group}', [RingGroupController::class, 'destroy'])->name('ring-groups.destroy');
 
+                Route::middleware('feature:ai_receptionist')->group(function () {
+                    Route::get('/receptionists', [ReceptionistController::class, 'index'])->name('receptionists');
+                    Route::get('/receptionists/new', [ReceptionistController::class, 'create'])->name('receptionists.create');
+                    Route::post('/receptionists', [ReceptionistController::class, 'store'])->name('receptionists.store');
+                    Route::get('/receptionists/{receptionist}', [ReceptionistController::class, 'edit'])->name('receptionists.edit');
+                    Route::put('/receptionists/{receptionist}', [ReceptionistController::class, 'update'])->name('receptionists.update');
+                    Route::delete('/receptionists/{receptionist}', [ReceptionistController::class, 'destroy'])->name('receptionists.destroy');
+                });
+
                 Route::get('/ivr', [IvrMenuController::class, 'index'])->name('ivr');
                 Route::get('/ivr/new', [IvrMenuController::class, 'create'])->middleware('within-plan:ivr_menus,admin.ivr')->name('ivr.create');
                 Route::post('/ivr', [IvrMenuController::class, 'store'])->middleware('within-plan:ivr_menus,admin.ivr')->name('ivr.store');
                 Route::get('/ivr/{menu}', [IvrMenuController::class, 'edit'])->name('ivr.edit');
                 Route::put('/ivr/{menu}', [IvrMenuController::class, 'update'])->name('ivr.update');
                 Route::delete('/ivr/{menu}', [IvrMenuController::class, 'destroy'])->name('ivr.destroy');
+            });
+
+            Route::middleware('feature:live_wallboard')->group(function () {
+                Route::get('/wallboard', [WallboardController::class, 'show'])->name('wallboard');
+                Route::get('/wallboard/data', [WallboardController::class, 'data'])->middleware('throttle:60,1')->name('wallboard.data');
+            });
+
+            Route::middleware('feature:call_queues')->group(function () {
+                Route::get('/queues', [CallQueueController::class, 'index'])->name('queues');
+                Route::get('/queues/new', [CallQueueController::class, 'create'])->name('queues.create');
+                Route::post('/queues', [CallQueueController::class, 'store'])->name('queues.store');
+                Route::get('/queues/{queue}', [CallQueueController::class, 'edit'])->name('queues.edit');
+                Route::put('/queues/{queue}', [CallQueueController::class, 'update'])->name('queues.update');
+                Route::patch('/queues/{queue}/agents/{user}', [CallQueueController::class, 'agent'])->name('queues.agent');
+                Route::delete('/queues/{queue}', [CallQueueController::class, 'destroy'])->name('queues.destroy');
             });
 
             Route::middleware(['feature:byo_trunk', 'password.confirm'])->group(function () {
@@ -205,9 +238,11 @@ Route::prefix('webhooks/voice')->name('webhooks.voice.')->middleware(['carrier.s
     Route::post('/inbound', [VoiceController::class, 'inbound'])->name('inbound');
     Route::post('/route', [VoiceController::class, 'route'])->name('route');
     Route::post('/after-dial', [VoiceController::class, 'afterDial'])->name('after-dial');
+    Route::post('/queue', [VoiceController::class, 'queue'])->name('queue');
     Route::post('/transfer', [VoiceController::class, 'transfer'])->name('transfer');
     Route::post('/confirm-mobile', [VoiceController::class, 'confirmMobile'])->name('confirm-mobile');
     Route::post('/ivr-choice', [VoiceController::class, 'ivrChoice'])->name('ivr-choice');
+    Route::post('/receptionist', [VoiceController::class, 'receptionist'])->name('receptionist');
     Route::post('/voicemail-saved', [VoiceController::class, 'voicemailSaved'])->name('voicemail-saved');
     Route::post('/recording-saved', [VoiceController::class, 'recordingSaved'])->name('recording-saved');
     Route::post('/sound-recorded', [VoiceController::class, 'soundRecorded'])->name('sound-recorded');

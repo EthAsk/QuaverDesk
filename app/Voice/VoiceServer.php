@@ -67,4 +67,14 @@ interface VoiceServer
      * @throws \RuntimeException when the voice server can't be asked
      */
     public function registrations(): array;
+
+    /**
+     * Our phones (softphones user-12, desk phones u12-ab12cd) on a call now,
+     * ringing or talking, by SIP username.
+     *
+     * @return list<string>
+     *
+     * @throws \RuntimeException when the voice server can't be asked
+     */
+    public function busyPhones(): array;
 }

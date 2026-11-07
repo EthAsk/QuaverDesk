@@ -23,10 +23,13 @@
 
         @if (auth()->user()->isAdmin())
             <div class="group">Admin</div>
+            <a href="{{ route('admin.wallboard') }}" @class(['on' => request()->routeIs('admin.wallboard')])>Live wallboard @unlessfeature('live_wallboard')<span class="lock">Pro</span>@endfeature</a>
             <a href="{{ route('admin.users') }}" @class(['on' => request()->routeIs('admin.users')])>Users</a>
             <a href="{{ route('admin.numbers') }}" @class(['on' => request()->routeIs('admin.numbers*')])>Phone numbers</a>
             <a href="{{ route('admin.ring-groups') }}" @class(['on' => request()->routeIs('admin.ring-groups*')])>Ring groups</a>
             <a href="{{ route('admin.ivr') }}" @class(['on' => request()->routeIs('admin.ivr*')])>IVR menus</a>
+            <a href="{{ route('admin.queues') }}" @class(['on' => request()->routeIs('admin.queues*')])>Call queues @unlessfeature('call_queues')<span class="lock">Plus</span>@endfeature</a>
+            <a href="{{ route('admin.receptionists') }}" @class(['on' => request()->routeIs('admin.receptionists*')])>AI receptionists @unlessfeature('ai_receptionist')<span class="lock">Pro</span>@endfeature</a>
             <a href="{{ route('admin.mailboxes') }}" @class(['on' => request()->routeIs('admin.mailboxes*')])>Voicemail boxes</a>
             <a href="{{ route('admin.sounds') }}" @class(['on' => request()->routeIs('admin.sounds')])>Sounds &amp; hold music</a>
             <a href="{{ route('admin.voice') }}" @class(['on' => request()->routeIs('admin.voice')])>Voice</a>
@@ -79,7 +82,7 @@
             </div>
         @endisset
         @if (session('upgrade'))
-            <div class="flash warn" role="status">{{ session('upgrade') }} is available on the Plus and Pro plans.</div>
+            <div class="flash warn" role="status">{{ session('upgrade') }} is available on {{ session('upgrade_plans', 'the Plus and Pro plans') }}.</div>
         @endif
         @if (session('limit'))
             <div class="flash warn" role="status">{{ session('limit') }}</div>
@@ -90,6 +93,7 @@
         <footer class="legal">
             Source-available software provided "as is", without warranty, under the Elastic License 2.0.
             It is not a substitute for a landline or mobile for emergency calls.
+            @poweredby <span class="powered">Powered by QuaverDesk.</span> @endpoweredby
             <span class="version">QuaverDesk {{ config('quaverdesk.version') }}</span>
         </footer>
     </main>

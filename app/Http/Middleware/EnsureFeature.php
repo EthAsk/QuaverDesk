@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Domain\Licensing\Feature;
+use App\Domain\Licensing\Plan;
 use App\Support\LicenceManager;
 use Closure;
 use Illuminate\Http\Request;
@@ -24,7 +25,8 @@ class EnsureFeature
                 return response()->json(['message' => "{$feature->label()} is available on a paid plan."], 402);
             }
 
-            return redirect()->route('dashboard')->with('upgrade', $feature->label());
+            return redirect()->route('dashboard')->with('upgrade', $feature->label())
+                ->with('upgrade_plans', Plan::Plus->allows($feature) ? 'the Plus and Pro plans' : 'the Pro plan');
         }
 
         return $next($request);

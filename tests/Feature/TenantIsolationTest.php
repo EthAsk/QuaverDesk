@@ -5,8 +5,10 @@ namespace Tests\Feature;
 use App\Domain\Licensing\LicenceCodec;
 use App\Domain\Licensing\Plan;
 use App\Models\Call;
+use App\Models\CallQueue;
 use App\Models\DeskPhone;
 use App\Models\IvrMenu;
+use App\Models\Receptionist;
 use App\Models\Mailbox;
 use App\Models\PhoneNumber;
 use App\Models\Recording;
@@ -71,6 +73,8 @@ class TenantIsolationTest extends TestCase
                 'number' => PhoneNumber::create(['e164' => '+442079460000', 'sip_trunk_id' => $trunk->id, 'destination' => 'hangup'])->id,
                 'group' => RingGroup::create(['name' => 'Bolt group', 'strategy' => 'simultaneous', 'ring_seconds' => 20])->id,
                 'menu' => IvrMenu::create(['name' => 'Bolt menu', 'greeting' => 'Hi', 'options' => []])->id,
+                'queue' => tap(CallQueue::create(['name' => 'Bolt queue']), fn (CallQueue $q) => $q->members()->attach($user->id))->id,
+                'receptionist' => Receptionist::create(['name' => 'Bolt desk', 'greeting' => 'Hi', 'routes' => [['name' => 'Sales', 'about' => '', 'to' => 'hangup']]])->id,
                 'mailbox' => Mailbox::create(['name' => 'Bolt box', 'greeting' => 'Leave a message'])->id,
                 'phone' => DeskPhone::create(['user_id' => $user->id, 'label' => 'Desk', 'sip_username' => 'u'.$user->id.'-abc123', 'sip_password' => 'desk-secret-1'])->id,
                 'sound' => Sound::create(['name' => 'Bolt music', 'file' => str_repeat('b', 40), 'seconds' => 3])->id,
@@ -97,7 +101,7 @@ class TenantIsolationTest extends TestCase
     /** Every row Bolt owns, to prove nothing changed. */
     private function boltSnapshot(): array
     {
-        return $this->in($this->bolt, fn () => collect([User::class, SipTrunk::class, PhoneNumber::class, RingGroup::class, IvrMenu::class,
+        return $this->in($this->bolt, fn () => collect([User::class, SipTrunk::class, PhoneNumber::class, RingGroup::class, IvrMenu::class, CallQueue::class, Receptionist::class,
             Mailbox::class, DeskPhone::class, Sound::class, Recording::class, Call::class, Setting::class])
             ->mapWithKeys(fn ($m) => [$m => $m::query()->orderBy('id')->get()->map->getAttributes()->all()])
             ->put('passkeys', DB::table('passkeys')->orderBy('id')->get()->all())->all());
@@ -198,7 +202,7 @@ class TenantIsolationTest extends TestCase
             ->expectsQuestion('Type the slug (bolt) to confirm', 'bolt')->assertSuccessful();
 
         $this->assertNull(Tenant::query()->find($this->bolt->id));
-        foreach (['users', 'calls', 'recordings', 'sip_trunks', 'phone_numbers', 'ring_groups', 'ivr_menus', 'mailboxes', 'desk_phones', 'sounds', 'settings', 'acknowledgements'] as $table) {
+        foreach (['users', 'calls', 'recordings', 'sip_trunks', 'phone_numbers', 'ring_groups', 'ivr_menus', 'call_queues', 'queue_callers', 'mailboxes', 'desk_phones', 'sounds', 'settings', 'acknowledgements'] as $table) {
             $this->assertSame(0, DB::table($table)->where('tenant_id', $this->bolt->id)->count(), "{$table} still has Bolt's rows");
         }
         $this->assertFileDoesNotExist($recordingFile);
