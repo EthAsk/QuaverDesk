@@ -1,0 +1,51 @@
+name: Feature request
+description: Suggest something Quaver Desk should do
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. You don't need to write any code: describing what you're trying to do is the most useful part. See the [roadmap](https://quaverdesk.co.uk/roadmap.html) first, as it may already be planned.
+
+        **Security problems:** please don't report them here. Follow SECURITY.md instead.
+
+        **Never paste secrets:** no `.env` contents, API keys, licence keys, SIP passwords, phone numbers or call recordings.
+  - type: textarea
+    id: goal
+    attributes:
+      label: What are you trying to do?
+      description: The problem or job, in your own words, rather than the feature you think it needs.
+      placeholder: "When a call comes in outside opening hours, we want …"
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: How do you cope today?
+      description: Any workaround, or what you use instead. Helps us see how much it matters.
+  - type: dropdown
+    id: where
+    attributes:
+      label: How do you run Quaver Desk?
+      options:
+        - Self-hosted
+        - Hosted by Quaver Desk
+        - Through a partner
+        - Not using it yet
+    validations:
+      required: true
+  - type: dropdown
+    id: plan
+    attributes:
+      label: Plan
+      options:
+        - Free
+        - Plus
+        - Pro
+        - Not sure
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Contributing
+      options:
+        - label: I'd be happy to try writing this myself (see CONTRIBUTING.md first)
