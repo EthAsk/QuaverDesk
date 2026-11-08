@@ -1,7 +1,20 @@
 # Contributing
 
 Thanks for helping improve QuaverDesk. Bug reports and suggested changes are
-welcome. Every pull request is reviewed by Ethan Askew T/A Quaver Desk, who
+welcome.
+
+## Suggesting a feature
+
+You don't need to write code to suggest something. Open a
+[feature request](../../issues/new?template=feature_request.yml) and describe what you're trying to do, who it's
+for and how you manage today. Please check the [roadmap](https://quaverdesk.co.uk/roadmap.html) first. Requests
+are weighed against how many people need them and how well they fit a small-team phone system, and we can't
+promise dates. Pull requests are welcome but optional, and for anything sizeable please agree the idea in an
+issue first so you don't spend time on something we won't merge.
+
+## Pull requests
+
+Every pull request is reviewed by Ethan Askew T/A Quaver Desk, who
 decides whether to accept it; nothing is merged without that review. For
 larger changes, please open an issue first so we can agree the approach.
 

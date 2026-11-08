@@ -1,5 +1,11 @@
 blank_issues_enabled: false
 contact_links:
+  - name: See what's planned
+    url: https://quaverdesk.co.uk/roadmap.html
+    about: Check the roadmap before suggesting something, as it may already be on the way.
+  - name: Hosted service, partners or licence questions
+    url: mailto:sales@quaverdesk.co.uk
+    about: For billing, hosted accounts, partner enquiries or a private quote, email us rather than opening an issue.
   - name: Report a security vulnerability
     url: https://github.com/EthAsk/QuaverDesk/security/advisories/new
     about: Please report security problems privately, never in a public issue.

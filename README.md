@@ -353,6 +353,7 @@ renewal.
 - [LICENSE](LICENSE) · [LICENSING.md](LICENSING.md) · [DISCLAIMER.md](DISCLAIMER.md)
 - [COMMERCIAL-TERMS.md](COMMERCIAL-TERMS.md) (terms for Plus and Pro licences)
 - [SECURITY.md](SECURITY.md) · [TRADEMARKS.md](TRADEMARKS.md) · [CONTRIBUTING.md](CONTRIBUTING.md) · [NOTICE](NOTICE)
+- Got an idea? [Open a feature request](../../issues/new?template=feature_request.yml) (no code needed) · [Roadmap](https://quaverdesk.co.uk/roadmap.html)
 - [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — setting up a production server
 - [docs/VOICE-SERVER.md](docs/VOICE-SERVER.md) — installing and running FreeSWITCH
 - [docs/DESK-PHONES.md](docs/DESK-PHONES.md) — setting up desk phones automatically, and busy lamp keys
