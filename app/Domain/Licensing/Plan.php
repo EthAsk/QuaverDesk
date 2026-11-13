@@ -37,12 +37,15 @@ enum Plan: string
             Feature::VoicemailAi,
             Feature::Passkeys,
             Feature::CallQueues,
+            Feature::Webhooks,
+            Feature::Api,
+            Feature::Reports,
         ];
 
         return match ($this) {
             self::Free => $free,
             self::Plus => $plus,
-            self::Pro => [...$plus, Feature::AiActionItems, Feature::AiSentiment, Feature::LiveWallboard, Feature::AiSearch, Feature::AiReceptionist],
+            self::Pro => [...$plus, Feature::AiActionItems, Feature::AiSentiment, Feature::LiveWallboard, Feature::AiSearch, Feature::AiReceptionist, Feature::HubSpot, Feature::Sso, Feature::QueueReports, Feature::QueueSkills, Feature::ApiCalls, Feature::Monitoring],
         };
     }
 
@@ -55,6 +58,14 @@ enum Plan: string
     public function allows(Feature $feature): bool
     {
         return in_array($feature, $this->features(), true);
+    }
+
+    /** Whether this plan is $plan or above it (Free, then Plus, then Pro). */
+    public function atLeast(Plan $plan): bool
+    {
+        $order = [self::Free, self::Plus, self::Pro];
+
+        return array_search($this, $order, true) >= array_search($plan, $order, true);
     }
 
     public function label(): string

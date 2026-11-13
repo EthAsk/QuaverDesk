@@ -45,6 +45,7 @@ class TenantPlansTest extends TestCase
                 $this->acknowledgeTerms(User::factory()->owner()->withTwoFactor()->create());
                 $trunk = SipTrunk::create(['name' => 'Trunk', 'provider' => 'other', 'inbound_ips' => [['ip' => '203.0.113.'.(10 + $i), 'prefix' => 32]],
                     'origination_uris' => ['sip:sbc.example.net'], 'status' => 'active', 'default_outbound' => true]);
+                $trunk->forceFill(['supplied_by_operator' => true])->save(); // ours, so the plan's minutes apply
                 PhoneNumber::create(['e164' => '+44207946000'.$i, 'sip_trunk_id' => $trunk->id, 'destination' => 'hangup']);
                 Setting::put('calling.caller_id', '+44207946000'.$i);
             });
@@ -72,7 +73,7 @@ class TenantPlansTest extends TestCase
     private function outsideCall(Tenant $tenant, ?int $seconds, ?\DateTimeInterface $at = null): void
     {
         $this->in($tenant, function () use ($seconds, $at) {
-            $call = Call::create(['carrier_sid' => self::callId($this->n++), 'direction' => 'outbound', 'decision' => 'number',
+            $call = Call::create(['carrier_sid' => self::callId($this->n++), 'direction' => 'outbound', 'decision' => 'number', 'sip_trunk_id' => SipTrunk::query()->value('id'),
                 'to' => '+447700900123', 'status' => $seconds === null ? 'initiated' : 'completed', 'duration_seconds' => $seconds]);
             if ($at) {
                 $call->forceFill(['created_at' => $at])->save();
@@ -134,7 +135,7 @@ class TenantPlansTest extends TestCase
         // Incoming calls use the same minutes (a number that isn't in service doesn't).
         $this->in($this->acme, fn () => Call::query()->update(['status' => 'completed', 'duration_seconds' => 60, 'created_at' => now()->subMonthsNoOverflow(2)]));
         $incoming = fn (string $decision) => $this->in($this->acme, fn () => Call::query()->create([
-            'carrier_sid' => (string) Str::uuid(), 'direction' => 'inbound', 'from' => '+447700900123', 'to' => '+442079460000',
+            'carrier_sid' => (string) Str::uuid(), 'direction' => 'inbound', 'from' => '+447700900123', 'to' => '+442079460000', 'sip_trunk_id' => SipTrunk::query()->value('id'),
             'decision' => $decision, 'status' => 'completed', 'duration_seconds' => 600,
         ]));
         $incoming('reject');
@@ -149,7 +150,7 @@ class TenantPlansTest extends TestCase
         $this->acme->forceFill(['monthly_minutes' => 10])->save();
         // Rang yesterday, but its hang-up never arrived.
         $this->in($this->acme, fn () => Call::query()->create([
-            'carrier_sid' => (string) Str::uuid(), 'direction' => 'inbound', 'from' => '+447700900123', 'to' => '+442079460000',
+            'carrier_sid' => (string) Str::uuid(), 'direction' => 'inbound', 'from' => '+447700900123', 'to' => '+442079460000', 'sip_trunk_id' => SipTrunk::query()->value('id'),
             'decision' => 'ring_group', 'status' => 'ringing',
         ])->forceFill(['created_at' => now()->subHours(18)])->save());
         $this->assertStringContainsString('bridge', $this->dial($this->acme));

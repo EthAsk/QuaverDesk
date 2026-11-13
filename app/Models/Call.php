@@ -11,7 +11,7 @@ class Call extends Model
     use BelongsToTenant;
 
     protected $fillable = [
-        'carrier_sid', 'parent_sid', 'leg', 'user_id', 'sip_trunk_id', 'direction', 'from', 'to', 'decision', 'status', 'reason', 'duration_seconds',
+        'carrier_sid', 'parent_sid', 'leg', 'user_id', 'sip_trunk_id', 'direction', 'from', 'to', 'decision', 'status', 'reason', 'duration_seconds', 'hubspot_call_id', 'caller_name', 'api_call_id',
     ];
 
     /** Turned away before it reached the company: it didn't prove which trunk it came in on. */

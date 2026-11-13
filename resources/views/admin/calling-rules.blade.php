@@ -39,7 +39,7 @@
                 'minutes_per_day' => ['Outside minutes per person per day', ''],
                 'max_call_minutes' => ['Longest outside call (minutes)', 'The phone system hangs up at this point.'],
                 'concurrent' => ['Outside calls at once (whole system)', ($hosted = app(\App\Tenancy\Quotas::class)->tenant())
-                    ? "Your plan allows up to {$hosted->concurrent_calls}, and {$hosted->monthly_minutes} minutes a month." : ''],
+                    ? "Your plan allows up to {$hosted->concurrent_calls}, and {$hosted->monthly_minutes} minutes of UK calls a month." : ''],
             ] as $key => [$label, $hint])
                 <div class="field">
                     <label for="limit-{{ $key }}">{{ $label }}</label>

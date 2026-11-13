@@ -87,6 +87,7 @@ class Wallboard
             'voice_server' => $busy !== null,
             'totals' => $totals,
             'live' => $live->map(fn (Call $c) => [
+                'id' => $c->id,
                 'direction' => $c->direction,
                 'from' => $c->from,
                 'to' => $c->to,

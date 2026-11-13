@@ -1,6 +1,8 @@
 import '@hotwired/turbo';
 import './phone-link';
 import './admin-audio';
+// Installed modules' scripts (modules/<Name>/resources/js/*.js); none in the public release.
+import.meta.glob('../../modules/*/resources/js/*.js', { eager: true });
 
 // Small progressive enhancements, kept out of inline attributes so the
 // Content-Security-Policy can forbid inline scripts.

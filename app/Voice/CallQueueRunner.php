@@ -60,7 +60,7 @@ class CallQueueRunner
         );
         if ($caller->ended_at !== null) {
             // Back in the same queue (a menu leading here again): a new place at the back.
-            $caller->forceFill(['joined_at' => now(), 'ended_at' => null, 'outcome' => null, 'announced_position' => null, 'announced_at' => null]);
+            $caller->forceFill(['joined_at' => now(), 'ended_at' => null, 'outcome' => null, 'announced_position' => null, 'announced_at' => null, 'rung_agents' => null]);
         }
 
         if ($afterRing && in_array($call->dialStatus(), ['completed', 'answered'], true)) {
@@ -106,7 +106,9 @@ class CallQueueRunner
             $options += ['record' => true, 'recordingStatusCallback' => $this->urls->recordingSaved()];
         }
 
-        return $script->dial(array_merge(...$free->values()->all()), $options);
+        $ring = app(QueueStrategy::class)->pick($queue, $caller, $free, $agents);
+
+        return $script->dial(array_merge(...$ring->values()->all()), $options);
     }
 
     /**
@@ -142,7 +144,7 @@ class CallQueueRunner
      * is busy; if the voice server can't say, everyone counts as free.
      *
      * @param  Collection<int, User>  $agents
-     * @return Collection<int, list<DialTarget>>
+     * @return Collection<int, list<DialTarget>> keyed by user id
      */
     private function freeAgents(Collection $agents): Collection
     {
@@ -153,9 +155,8 @@ class CallQueueRunner
             $busy = [];
         }
 
-        return $agents->map(fn (User $u) => $this->directory->targetsFor($u))
-            ->filter(fn (array $targets) => $targets !== [] && ! array_filter($targets, fn (DialTarget $t) => isset($busy[self::phoneOf($t)])))
-            ->values();
+        return $agents->mapWithKeys(fn (User $u) => [$u->id => $this->directory->targetsFor($u)])
+            ->filter(fn (array $targets) => $targets !== [] && ! array_filter($targets, fn (DialTarget $t) => isset($busy[self::phoneOf($t)])));
     }
 
     /** The SIP username a dial target rings: user-12, or a desk phone's u12-ab12cd. */

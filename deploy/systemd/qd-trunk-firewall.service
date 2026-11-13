@@ -1,0 +1,14 @@
+[Unit]
+Description=QuaverDesk: allow only SIP trunk providers on the trunk ports
+After=nftables.service
+# Re-applied whenever nftables is restarted (which flushes every table).
+PartOf=nftables.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/qd-trunk-firewall
+ExecReload=/usr/local/sbin/qd-trunk-firewall
+
+[Install]
+WantedBy=multi-user.target nftables.service

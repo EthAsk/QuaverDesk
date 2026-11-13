@@ -60,10 +60,19 @@
 
         <div class="card">
             <h2>Agents</h2>
+            <div class="field">
+                <label for="strategy">Who to ring</label>
+                <select id="strategy" name="strategy">
+                    @foreach ($strategies as $key => $label)
+                                                <option value="{{ $key }}" @selected(old('strategy', $queue->strategy ?: 'ring_all') === $key)>{{ $label }}@if ($key === 'priority') (Pro)@endif</option>
+                    @endforeach
+                </select>
+                <div class="small muted">Anyone already on a call is always skipped. With one agent at a time, if they don't answer the next round tries someone else. By priority needs the Pro plan; on other plans it rings every free agent.</div>
+            </div>
             <p class="small muted">Tick who takes this queue's calls. Free agents ring together; anyone already on a call is skipped.
                 Agents log in and out on their dashboard or by dialling <strong>*45</strong>.</p>
             <table>
-                <thead><tr><th>Agent</th><th>Person</th><th>Logged in</th></tr></thead>
+                <thead><tr><th>Agent</th><th>Person</th><th>Logged in</th>@feature('queue_skills')<th>Priority</th>@endfeature</tr></thead>
                 <tbody>
                 @foreach ($users as $u)
                     @php($in = in_array($u->id, old('members', array_keys($members))))
@@ -77,6 +86,9 @@
                                 <span class="muted">—</span>
                             @endif
                         </td>
+                        @feature('queue_skills')
+                            <td><input type="number" name="priority[{{ $u->id }}]" min="1" max="9" value="{{ old('priority.'.$u->id, $priorities[$u->id] ?? 1) }}" style="width:4em" aria-label="Priority for {{ $u->name }} (1 is first choice)"></td>
+                        @endfeature
                     </tr>
                 @endforeach
                 </tbody>

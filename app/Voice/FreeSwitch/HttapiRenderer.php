@@ -55,6 +55,8 @@ final class HttapiRenderer
                 'park' => $this->park($doc, $work, $step[1], $step[2], $step[3]),
                 'hold' => $this->hold($doc, $work, $step[1], $step[2]),
                 'redirect' => (bool) $work->appendChild($this->el($doc, 'continue', null, ['action' => $step[1]])),
+                'caller_name' => $this->callerName($doc, $work, $step[1]),
+                'key_sends_digits' => $this->keySendsDigits($doc, $work, $step[1], $step[2]),
                 'hangup' => (bool) $work->appendChild($doc->createElement('hangup')),
                 default => throw new InvalidArgumentException("Unknown call step: {$step[0]}"),
             };
@@ -83,6 +85,32 @@ final class HttapiRenderer
     private function say(DOMDocument $doc, DOMElement $work, string $text): bool
     {
         $work->appendChild($this->prompt($doc, $text));
+
+        return false;
+    }
+
+    /** The name phones show for this caller. Only plain characters get through: it ends up in a FreeSWITCH variable. */
+    private function callerName(DOMDocument $doc, DOMElement $work, string $name): bool
+    {
+        $name = trim(preg_replace('/\s+/', ' ', preg_replace("/[^\p{L}\p{N} .,'&()-]/u", '', $name)));
+        if ($name !== '') {
+            $work->appendChild($this->el($doc, 'execute', null, ['application' => 'set', 'data' => 'effective_caller_id_name='.mb_substr($name, 0, 60)]));
+        }
+
+        return false;
+    }
+
+    /**
+     * Binds the key to the other side of the call (the person who picks up) and has the voice server send
+     * the digits back out on this leg, to the caller's device. Both values are checked: they end up in a
+     * FreeSWITCH command.
+     */
+    private function keySendsDigits(DOMDocument $doc, DOMElement $work, string $key, string $digits): bool
+    {
+        $key = self::safe($key, '/^[0-9*#]$/');
+        $digits = self::safe($digits, '/^[0-9]{3,12}$/');
+        $work->appendChild($this->el($doc, 'execute', null, ['application' => 'bind_digit_action', 'data' => "qd_keys,{$key},exec:send_dtmf,{$digits}@250,peer,self"]));
+        $work->appendChild($this->el($doc, 'execute', null, ['application' => 'digit_action_set_realm', 'data' => 'qd_keys']));
 
         return false;
     }

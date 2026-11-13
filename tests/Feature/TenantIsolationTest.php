@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Domain\Licensing\LicenceCodec;
 use App\Domain\Licensing\Plan;
+use App\Models\ApiToken;
 use App\Models\Call;
 use App\Models\CallQueue;
 use App\Models\DeskPhone;
@@ -30,6 +31,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use ZipArchive;
+use Tests\Support\ModuleFixtures;
 use Tests\TestCase;
 
 /** One company can never see, change or keep another's data. */
@@ -62,34 +64,56 @@ class TenantIsolationTest extends TestCase
         }
 
         $this->bolts = $this->in($this->bolt, function () {
-            $user = User::factory()->create(['name' => 'Bolt Person']);
-            $trunk = SipTrunk::create(['name' => 'Bolt trunk', 'provider' => 'other', 'inbound_ips' => [['ip' => '203.0.113.9', 'prefix' => 32]],
-                'origination_uris' => ['sip:sbc.example.net'], 'status' => 'active', 'auth_password' => 'trunk-secret-1']);
-            $call = Call::create(['carrier_sid' => self::callId(1), 'user_id' => $user->id, 'direction' => 'internal', 'status' => 'ended']);
+            $core = $this->boltCore();
+            foreach (ModuleFixtures::all() as $fixtures) {
+                $core += $fixtures::create($core);
+            }
 
-            return [
-                'user' => $user->id,
-                'trunk' => $trunk->id,
-                'number' => PhoneNumber::create(['e164' => '+442079460000', 'sip_trunk_id' => $trunk->id, 'destination' => 'hangup'])->id,
-                'group' => RingGroup::create(['name' => 'Bolt group', 'strategy' => 'simultaneous', 'ring_seconds' => 20])->id,
-                'menu' => IvrMenu::create(['name' => 'Bolt menu', 'greeting' => 'Hi', 'options' => []])->id,
-                'queue' => tap(CallQueue::create(['name' => 'Bolt queue']), fn (CallQueue $q) => $q->members()->attach($user->id))->id,
-                'receptionist' => Receptionist::create(['name' => 'Bolt desk', 'greeting' => 'Hi', 'routes' => [['name' => 'Sales', 'about' => '', 'to' => 'hangup']]])->id,
-                'mailbox' => Mailbox::create(['name' => 'Bolt box', 'greeting' => 'Leave a message'])->id,
-                'phone' => DeskPhone::create(['user_id' => $user->id, 'label' => 'Desk', 'sip_username' => 'u'.$user->id.'-abc123', 'sip_password' => 'desk-secret-1'])->id,
-                'sound' => Sound::create(['name' => 'Bolt music', 'file' => str_repeat('b', 40), 'seconds' => 3])->id,
-                'passkey' => DB::table('passkeys')->insertGetId(['user_id' => $user->id, 'name' => 'Bolt key', 'credential_id' => 'bolt-credential',
-                    'credential' => '{}', 'created_at' => now(), 'updated_at' => now()]),
-                'recording' => Recording::create(['kind' => 'call', 'carrier_sid' => self::callId(1).'-call', 'call_id' => $call->id,
-                    'status' => 'stored', 'transcript' => 'Bolt secret plans'])->id,
-            ];
+            return $core;
         });
+        $this->finishBolts();
+    }
+
+    /** @return array<string, int> */
+    private function boltCore(): array
+    {
+        $user = User::factory()->create(['name' => 'Bolt Person']);
+        $trunk = SipTrunk::create(['name' => 'Bolt trunk', 'provider' => 'other', 'inbound_ips' => [['ip' => '203.0.113.9', 'prefix' => 32]],
+            'origination_uris' => ['sip:sbc.example.net'], 'status' => 'active', 'auth_password' => 'trunk-secret-1']);
+        $call = Call::create(['carrier_sid' => self::callId(1), 'user_id' => $user->id, 'direction' => 'internal', 'status' => 'ended']);
+
+        return [
+            'user' => $user->id,
+            'trunk' => $trunk->id,
+            'number' => PhoneNumber::create(['e164' => '+442079460000', 'sip_trunk_id' => $trunk->id, 'destination' => 'hangup'])->id,
+            'group' => RingGroup::create(['name' => 'Bolt group', 'strategy' => 'simultaneous', 'ring_seconds' => 20])->id,
+            'menu' => IvrMenu::create(['name' => 'Bolt menu', 'greeting' => 'Hi', 'options' => []])->id,
+            'queue' => tap(CallQueue::create(['name' => 'Bolt queue']), fn (CallQueue $q) => $q->members()->attach($user->id))->id,
+            'receptionist' => Receptionist::create(['name' => 'Bolt desk', 'greeting' => 'Hi', 'routes' => [['name' => 'Sales', 'about' => '', 'to' => 'hangup']]])->id,
+            'mailbox' => Mailbox::create(['name' => 'Bolt box', 'greeting' => 'Leave a message'])->id,
+            'phone' => DeskPhone::create(['user_id' => $user->id, 'label' => 'Desk', 'sip_username' => 'u'.$user->id.'-abc123', 'sip_password' => 'desk-secret-1'])->id,
+            'sound' => Sound::create(['name' => 'Bolt music', 'file' => str_repeat('b', 40), 'seconds' => 3])->id,
+            'passkey' => DB::table('passkeys')->insertGetId(['user_id' => $user->id, 'name' => 'Bolt key', 'credential_id' => 'bolt-credential',
+                'credential' => '{}', 'created_at' => now(), 'updated_at' => now()]),
+            'call' => $call->id,
+            'apiToken' => ApiToken::make('Bolt key')[0]->id,
+            'webhook' => tap(new \App\Models\WebhookEndpoint(['name' => 'Bolt hook', 'url' => 'https://93.184.216.34/bolt']), fn ($w) => $w->forceFill(['secret' => 'whsec_bolt'])->save())->id,
+            'recording' => Recording::create(['kind' => 'call', 'carrier_sid' => self::callId(1).'-call', 'call_id' => $call->id,
+                'status' => 'stored', 'transcript' => 'Bolt secret plans'])->id,
+        ];
+    }
+
+    private function finishBolts(): void
+    {
         // The operator console's company pages don't exist on a company's address.
         $this->bolts['tenant'] = $this->bolt->id;
         // Licences live on the licence server, not in any company (operator console only, where it exists).
         $this->bolts['licence'] = 1;
         $this->bolts['reseller'] = 1;
         $this->bolts['action'] = 'update';
+        $this->bolts['person'] = 1;
+        $this->bolts['partner'] = 1;
+        $this->bolts['invoice'] = 1;
         $this->tenancy->set(null);
     }
 
@@ -102,7 +126,8 @@ class TenantIsolationTest extends TestCase
     private function boltSnapshot(): array
     {
         return $this->in($this->bolt, fn () => collect([User::class, SipTrunk::class, PhoneNumber::class, RingGroup::class, IvrMenu::class, CallQueue::class, Receptionist::class,
-            Mailbox::class, DeskPhone::class, Sound::class, Recording::class, Call::class, Setting::class])
+            Mailbox::class, DeskPhone::class, Sound::class, Recording::class, Call::class, Setting::class, \App\Models\WebhookEndpoint::class,
+            ...collect(ModuleFixtures::all())->flatMap(fn ($f) => $f::models())->all()])
             ->mapWithKeys(fn ($m) => [$m => $m::query()->orderBy('id')->get()->map->getAttributes()->all()])
             ->put('passkeys', DB::table('passkeys')->orderBy('id')->get()->all())->all());
     }
@@ -115,9 +140,10 @@ class TenantIsolationTest extends TestCase
 
         foreach (app('router')->getRoutes() as $route) {
             /** @var Route $route */
-            // Not records: prompt/sound file names (unguessable, voice server only) and reset tokens.
-            $params = array_values(array_diff($route->parameterNames(), ['hash', 'file', 'token']));
-            if (! $params || str_starts_with($route->uri(), 'webhooks/')) {
+            // Not records: prompt/sound file names (unguessable, voice server only), reset tokens and
+            // the name of a sign-in service (microsoft, google; see SsoTest for company separation).
+            $params = array_values(array_diff($route->parameterNames(), ['hash', 'file', 'token', 'provider']));
+            if (! $params || str_starts_with($route->uri(), 'webhooks/') || str_starts_with($route->uri(), 'scim/') || str_starts_with($route->uri(), 'api/v1/')) { // these answer to tokens, tested in ScimTest and ApiTest
                 continue;
             }
             foreach ($params as $param) {

@@ -69,6 +69,8 @@ class CallQueueController extends Controller
             'queue' => $queue,
             'users' => User::query()->seated()->orderBy('name')->get(),
             'members' => $queue->exists ? $queue->members->mapWithKeys(fn (User $u) => [$u->id => (bool) $u->pivot->logged_in])->all() : [],
+            'priorities' => $queue->exists ? $queue->members->mapWithKeys(fn (User $u) => [$u->id => (int) $u->pivot->priority])->all() : [],
+            'strategies' => \App\Voice\QueueStrategy::LABELS,
             'sounds' => Sound::query()->orderBy('name')->get(['id', 'name']),
             'options' => $options,
         ]);
@@ -88,6 +90,9 @@ class CallQueueController extends Controller
             'max_wait_minutes' => ['required', 'integer', 'min:1', 'max:60'],
             'hold_sound_id' => ['nullable', 'integer', TenantRule::exists('sounds')],
             'overflow' => ['nullable', new ValidDestination()],
+            'strategy' => ['nullable', Rule::in(array_keys(\App\Voice\QueueStrategy::LABELS))],
+            'priority' => ['nullable', 'array'],
+            'priority.*' => ['integer', 'min:1', 'max:9'],
             'members' => ['nullable', 'array'],
             'members.*' => ['integer', TenantRule::exists('users')->where('forward_only', 0)],
         ], [
@@ -110,13 +115,17 @@ class CallQueueController extends Controller
             'hold_sound_id' => $data['hold_sound_id'] ?? null,
             'overflow' => $data['overflow'] ?? null,
             'overflow_when_empty' => $request->boolean('overflow_when_empty'),
+            'strategy' => $data['strategy'] ?? \App\Voice\QueueStrategy::RING_ALL,
         ])->save();
 
         // New agents start logged in; agents already here keep whether they're in or out.
-        $current = $queue->members()->get()->mapWithKeys(fn (User $u) => [$u->id => (bool) $u->pivot->logged_in]);
+        $current = $queue->members()->get()->mapWithKeys(fn (User $u) => [$u->id => ['in' => (bool) $u->pivot->logged_in, 'priority' => (int) $u->pivot->priority]]);
         $sync = [];
         foreach ($data['members'] ?? [] as $userId) {
-            $sync[$userId] = ['logged_in' => $current[$userId] ?? true];
+            // Priority is only changed on the plans that have it; otherwise it stays as it was.
+            $priority = app(\App\Support\LicenceManager::class)->allows(\App\Domain\Licensing\Feature::QueueSkills)
+                ? (int) ($data['priority'][$userId] ?? 1) : (int) ($current[$userId]['priority'] ?? 1);
+            $sync[$userId] = ['logged_in' => $current[$userId]['in'] ?? true, 'priority' => $priority];
         }
         $queue->members()->sync($sync);
 

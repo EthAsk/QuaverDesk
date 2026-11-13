@@ -23,8 +23,8 @@
                     <tr>
                         <td style="white-space:nowrap">{{ $call->created_at->format('j M, H:i:s') }}</td>
                         <td>{{ ucfirst($call->direction) }}</td>
-                        <td>{{ $call->from ?? '—' }}</td>
-                        <td>{{ $call->to }}</td>
+                        <td>{{ $call->from ?? '—' }}@if ($call->caller_name)<div class="small muted">{{ $call->caller_name }}</div>@endif</td>
+                        <td>{{ $call->to }}@if ($call->api_call_id) <span class="pill">API</span>@endif</td>
                         <td>{{ $call->user?->name ?? '—' }}</td>
                         <td>{{ $call->leg === \App\Models\Call::LEG_ON_NET ? 'Direct (on this service)' : ($call->trunk?->name ?? '—') }}</td>
                         <td><span @class(['pill', 'warn' => in_array($call->status, \App\Models\Call::PROBLEMS, true)])>{{ $call->status }}</span></td>

@@ -1,0 +1,45 @@
+# QuaverDesk: ban SSH and SIP scanners. Never ban the LAN or the trunk providers.
+# Copy to /etc/fail2ban/jail.d/quaverdesk.local. See "Firewall" in docs/VOICE-SERVER.md.
+#
+# ignoreip: private ranges and Twilio's SIP signalling ranges. Add your own trunk
+# providers' addresses, and this server's public IP if phones on your LAN reach it
+# through that address.
+[DEFAULT]
+banaction = nftables-multiport
+banaction_allports = nftables-allports
+ignoreip = 127.0.0.0/8 ::1 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+           54.172.60.0/30 54.244.51.0/30 54.171.127.192/30 35.156.191.128/30
+           54.65.63.192/30 54.169.127.128/30 54.252.254.64/30 177.71.206.192/30
+           168.86.128.0/18
+
+[sshd]
+backend = systemd
+
+# Wrong SIP passwords and unknown users (FreeSWITCH's own filter).
+[freeswitch]
+enabled  = true
+mode     = normal
+logpath  = /var/log/freeswitch/freeswitch.log
+port     = 5060,5061,5080,5081,7443
+protocol = all
+banaction = %(banaction_allports)s
+maxretry = 5
+findtime = 10m
+bantime  = 1d
+bantime.increment = true
+bantime.maxtime = 30d
+
+# Scanners on the phone side that never send a password: real phones call from
+# user@<your voice domain>, scanners from user@<an IP address>.
+[qd-sip-scan]
+enabled  = true
+filter   = qd-sip-scan
+logpath  = /var/log/freeswitch/freeswitch.log
+port     = 5060,5061,5080,5081,7443
+protocol = all
+banaction = %(banaction_allports)s
+maxretry = 3
+findtime = 1h
+bantime  = 1d
+bantime.increment = true
+bantime.maxtime = 30d

@@ -15,7 +15,7 @@ class TenantPlan extends Command
         {--plan= : free, plus or pro (which features)}
         {--seats= : People}
         {--numbers= : Phone numbers}
-        {--minutes= : Minutes of calls to phone numbers a month}
+        {--minutes= : Minutes of UK calls a month}
         {--concurrent= : Calls to phone numbers at once}
         {--storage= : Storage for recordings, voicemail and sounds, in MB}';
 

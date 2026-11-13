@@ -1,0 +1,4 @@
+# Lets the app's own user run the root-owned backup script, and nothing else, so Admin → System can
+# "Back up now". Install: sudo install -m 440 -o root -g root deploy/sudoers/quaverdesk-backup /etc/sudoers.d/quaverdesk-backup
+# then check it with: sudo visudo -c
+quaverdesk ALL=(root) NOPASSWD: /usr/local/sbin/quaverdesk-backup

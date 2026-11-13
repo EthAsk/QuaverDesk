@@ -52,6 +52,33 @@ class LicenceManager
         return $this->current()->allows($feature);
     }
 
+    /** A feature by its key: one of the core's (Feature) or one a module added. Unknown keys are off. */
+    public function allowsKey(string $key): bool
+    {
+        if (($feature = Feature::tryFrom($key)) !== null) {
+            return $this->allows($feature);
+        }
+        $module = app(Modules::class)->featureInfo($key);
+
+        return $module !== null && $this->current()->plan->atLeast($module['plan']);
+    }
+
+    /** What a feature key is called, and the plans that include it (for upgrade prompts). @return array{0: string, 1: string} */
+    public static function describe(string $key): array
+    {
+        if (($feature = Feature::tryFrom($key)) !== null) {
+            return [$feature->label(), \App\Domain\Licensing\Plan::Plus->allows($feature) ? 'the Plus and Pro plans' : 'the Pro plan'];
+        }
+        $module = app(Modules::class)->featureInfo($key);
+        $plans = match ($module['plan'] ?? null) {
+            \App\Domain\Licensing\Plan::Free => 'every plan',
+            \App\Domain\Licensing\Plan::Plus => 'the Plus and Pro plans',
+            default => 'the Pro plan',
+        };
+
+        return [$module['label'] ?? $key, $plans];
+    }
+
     /** Why the stored key was rejected, if it was. */
     public function problem(): ?string
     {

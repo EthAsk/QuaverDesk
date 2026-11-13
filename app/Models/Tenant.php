@@ -39,6 +39,8 @@ class Tenant extends Model
             'monthly_minutes' => 'integer',
             'concurrent_calls' => 'integer',
             'storage_mb' => 'integer',
+            'partner_id' => 'integer',
+            'partner_branding' => 'boolean',
         ];
     }
 

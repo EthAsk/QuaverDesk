@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\EnsureAcknowledged;
+use App\Http\Middleware\ApiAuth;
 use App\Http\Middleware\EnsureFeature;
 use App\Http\Middleware\EnsureHosted;
 use App\Http\Middleware\EnsureCanSignIn;
@@ -10,6 +11,7 @@ use App\Http\Middleware\EnsureWithinPlan;
 use App\Http\Middleware\IdentifyCallTenant;
 use App\Http\Middleware\IdentifyTenant;
 use App\Http\Middleware\RequireTwoFactorForAdmins;
+use App\Http\Middleware\ScimAuth;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\SupportVisit;
 use App\Http\Middleware\ValidateCarrierWebhook;
@@ -38,9 +40,9 @@ return Application::configure(basePath: dirname(__DIR__))
         // Trusted proxies are applied in AppServiceProvider from config, so they
         // still work after `php artisan config:cache` (env() is empty then).
 
-        // Voice server webhooks are server-to-server and carry a shared secret,
-        // so they are exempt from CSRF and protected by that secret instead.
-        $middleware->validateCsrfTokens(except: ['webhooks/*']);
+        // Voice server webhooks and the directory's user sync are server-to-server and carry a
+        // secret, so they are exempt from CSRF and protected by that secret instead.
+        $middleware->validateCsrfTokens(except: ['webhooks/*', 'scim/*', 'api/*']);
 
         // Keep answering calls while `php artisan down` is on during a deploy.
         $middleware->preventRequestsDuringMaintenance(except: ['webhooks/voice/*', 'voice/prompts/*', 'voice/sounds/*', 'voice/messages/*']);
@@ -53,6 +55,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'admin2fa' => RequireTwoFactorForAdmins::class,
             'carrier.signed' => ValidateCarrierWebhook::class,
             'hosted' => EnsureHosted::class,
+            'scim' => ScimAuth::class,
+            'api.token' => ApiAuth::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

@@ -197,6 +197,12 @@ sudo install -o root -g root -m 700 deploy/backup.sh /usr/local/sbin/quaverdesk-
 sudo install -o root -g root -m 700 deploy/deploy.sh /usr/local/sbin/quaverdesk-deploy
 
 sudo cp deploy/cron/quaverdesk /etc/cron.d/quaverdesk && sudo chmod 644 /etc/cron.d/quaverdesk
+
+# Lets Admin → System offer "Back up now": the app's user may run that one
+# root-owned script, and nothing else.
+sudo install -o root -g root -m 440 deploy/sudoers/quaverdesk-backup /etc/sudoers.d/quaverdesk-backup
+sudo visudo -c
+sudo mkdir -p /var/lib/quaverdesk       # where the backup leaves the status the System page shows
 ```
 
 Set up backup encryption. **On a computer other than the server**, so the
@@ -227,6 +233,8 @@ ls -l /var/backups/quaverdesk/
 
 Backups on the same server are not backups. Copy `/var/backups/quaverdesk` to
 another provider daily, for example with `rclone` to object storage in the UK.
+You can also download any backup from **Admin → System**: the files are
+encrypted, so only your private key (kept off the server) can open them.
 
 ### A9. Create the owner account
 
@@ -354,11 +362,32 @@ To update to the latest version:
 sudo quaverdesk-deploy
 ```
 
-This pulls the code, installs dependencies, builds assets, migrates the
-database, rebuilds caches, reloads PHP and restarts the worker, then shows the
-version you're now on. Calls keep being answered during the short maintenance
-window. Deploy out of hours, and read [CHANGELOG.md](../CHANGELOG.md) first:
-it lists what changed in each release and anything to do by hand.
+It always updates to the latest release (there's no pinning to an older
+version). In order, it:
+
+1. **Takes a backup.** If the backup fails, nothing is changed. If the backup
+   script isn't installed it says so loudly and carries on after 10 seconds
+   (`SKIP_BACKUP=1` skips it on purpose).
+2. Pulls the code, installs dependencies, builds assets, migrates the
+   database, rebuilds caches, reloads PHP and restarts the worker.
+3. **Runs a health check** (the web address answers, and
+   `php artisan quaverdesk:health`: database, storage, disk space, scheduler,
+   queue worker, voice server, licence, backups, settings) and says plainly if
+   something is wrong, with a pointer to rolling back. It exits with an error so
+   scripts notice.
+
+Calls keep being answered during the short maintenance window. Deploy out of
+hours, and read [CHANGELOG.md](../CHANGELOG.md) first: it lists what changed in
+each release and anything to do by hand.
+
+**Knowing there's an update.** Admins see an "update available" notice, with a
+link to what changed, when a newer release is out. Once a day the server asks
+GitHub for the latest release (nothing about you is sent). Turn that off with
+`QUAVERDESK_UPDATE_CHECK=false` in `.env`. Updating is always done on the
+server, never from the web page.
+
+**Admin → System** shows the version, the same health checks, and your
+backups (with **Back up now** and downloads). Restoring is done on the server.
 
 The version you're running is shown at the foot of every page, and in the
 `VERSION` file.

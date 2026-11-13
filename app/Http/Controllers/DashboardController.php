@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Domain\Licensing\Feature;
 use App\Models\Acknowledgement;
 use App\Models\CallQueue;
-use App\Models\User;
 use App\Support\LicenceManager;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -15,15 +14,7 @@ class DashboardController extends Controller
 {
     public function __invoke(Request $request, LicenceManager $licences): View
     {
-        $licence = $licences->current();
-
         return view('dashboard', [
-            'licence' => $licence,
-            'features' => collect(Feature::cases())->map(fn (Feature $f) => [
-                'label' => $f->label(),
-                'enabled' => $licence->allows($f),
-            ]),
-            'userCount' => User::query()->seated()->count(),
             'setupDone' => Acknowledgement::currentAccepted(),
             'queues' => $licences->allows(Feature::CallQueues) ? $request->user()->queues()->orderBy('name')->get() : collect(),
         ]);

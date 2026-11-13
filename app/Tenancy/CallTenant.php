@@ -94,9 +94,11 @@ class CallTenant
             return User::query()->whereKey((int) $m[1])->value('tenant_id');
         }
 
-        return preg_match('/^u\d+-[a-f0-9]{6}$/', $username)
-            ? DeskPhone::query()->where('sip_username', $username)->value('tenant_id')
-            : null;
+        if (preg_match('/^u\d+-[a-f0-9]{6}$/', $username)) {
+            return DeskPhone::query()->where('sip_username', $username)->value('tenant_id');
+        }
+
+        return app(\App\Support\Modules::class)->tenantForSipUser($username);
     }
 
     /**

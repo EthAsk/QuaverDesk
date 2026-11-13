@@ -3,7 +3,6 @@
 namespace App\Http\Middleware;
 
 use App\Domain\Licensing\Feature;
-use App\Domain\Licensing\Plan;
 use App\Support\LicenceManager;
 use Closure;
 use Illuminate\Http\Request;
@@ -18,15 +17,16 @@ class EnsureFeature
 
     public function handle(Request $request, Closure $next, string $feature): Response
     {
-        $feature = Feature::from($feature);
+        // A core feature, or one an installed module added; anything else is a mistake in the routes.
+        abort_if(Feature::tryFrom($feature) === null && app(\App\Support\Modules::class)->featureInfo($feature) === null, 500, "Unknown feature: {$feature}");
 
-        if (! $this->licences->allows($feature)) {
+        if (! $this->licences->allowsKey($feature)) {
+            [$label, $plans] = LicenceManager::describe($feature);
             if ($request->expectsJson()) {
-                return response()->json(['message' => "{$feature->label()} is available on a paid plan."], 402);
+                return response()->json(['message' => "{$label} is available on a paid plan."], 402);
             }
 
-            return redirect()->route('dashboard')->with('upgrade', $feature->label())
-                ->with('upgrade_plans', Plan::Plus->allows($feature) ? 'the Plus and Pro plans' : 'the Pro plan');
+            return redirect()->route('dashboard')->with('upgrade', $label)->with('upgrade_plans', $plans);
         }
 
         return $next($request);

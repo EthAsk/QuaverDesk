@@ -148,14 +148,49 @@ both.
 ```bash
 sudo ufw allow 5061/tcp
 sudo ufw allow 7443/tcp
-sudo ufw allow from 203.0.113.10 to any port 5080   # repeat per provider IP
-sudo ufw allow from 203.0.113.10 to any port 5081 proto tcp   # secure trunks
+sudo ufw allow 5080              # narrowed to your providers by the trunk firewall below
+sudo ufw allow 5081/tcp
 sudo ufw allow 16384:32768/udp
 ```
 
-Never open 5060 or the event socket (8021). FreeSWITCH also checks trunk calls
-against the allow-list the app writes, but the firewall stops SIP scanners
-before they reach it.
+Never open 5060 or the event socket (8021).
+
+### Trunk firewall: providers only, kept up to date for you
+
+The trunk ports must only accept your providers. You don't keep that list by hand:
+the app already writes your providers' addresses (from **Admin → SIP trunks**) into
+FreeSWITCH's allow-list, and `qd-trunk-firewall` copies that list into the firewall
+whenever it changes, within a second or two. Adding a provider in the app is all it takes.
+
+```bash
+cd /srv/quaverdesk
+sudo install -o root -g root -m 750 deploy/firewall/qd-trunk-firewall /usr/local/sbin/qd-trunk-firewall
+sudo cp deploy/systemd/qd-trunk-firewall.service deploy/systemd/qd-trunk-firewall-reload.service \
+        deploy/systemd/qd-trunk-firewall.path /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now qd-trunk-firewall.service qd-trunk-firewall.path
+sudo nft list table inet qd_trunks       # your providers' ranges, then "drop"
+```
+
+`sudo qd-trunk-firewall --dry-run` shows the rules without changing anything, and
+`journalctl -t qd-trunk-firewall` shows each update. If the allow-list is ever missing or
+empty, the last good list is kept. FreeSWITCH refuses calls from anyone not on the
+list either way; the firewall just stops scanners before they reach it.
+
+### fail2ban: ban SIP scanners
+
+```bash
+sudo cp deploy/fail2ban/filter.d/qd-sip-scan.conf /etc/fail2ban/filter.d/
+sudo cp deploy/fail2ban/jail.d/quaverdesk.local /etc/fail2ban/jail.d/
+sudo fail2ban-client -t && sudo systemctl reload fail2ban
+sudo fail2ban-client status              # sshd, freeswitch, qd-sip-scan
+```
+
+Add your own providers' addresses to `ignoreip` in `quaverdesk.local` (Twilio's are
+there already). Two jails watch the voice server: `freeswitch` bans wrong passwords
+(5 in 10 minutes), and `qd-sip-scan` bans scanners that never send one (3 in an
+hour). Real phones call as `user@your-voice-domain`; scanners use a bare IP address.
+Bans last a day and grow for repeat offenders, up to 30 days.
 
 ## Speech
 
@@ -251,7 +286,7 @@ fs_cli -P 8021 -p "$VOICE_ESL_PASSWORD"     # FreeSWITCH console
 | Softphone can't connect | `VOICE_WEBSOCKET_URL` uses `wss://` and the certificate matches `VOICE_DOMAIN`; port 7443 open. |
 | Calls connect but there's no audio | `VOICE_EXTERNAL_IP` is the public IP; RTP ports open. |
 | Every call is silent then drops; app log shows 403 on `/webhooks/voice/*` | `VOICE_WEBHOOK_SECRET` changed: run `php artisan voice:sync`. |
-| Trunk calls rejected | The provider's IPs are on the trunk page, and the firewall allows them on 5080. |
+| Trunk calls rejected | The provider's IPs are on the trunk page; `sudo nft list table inet qd_trunks` lists them; `journalctl -t qd-trunk-firewall` for errors. |
 | Changes to people or trunks don't take effect | Queue worker running; `php artisan voice:sync` shows any error. |
 
 ## Busy lamp keys

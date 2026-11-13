@@ -24,6 +24,15 @@ enum Feature: string
     case LiveWallboard = 'live_wallboard';
     case AiSearch = 'ai_search';
     case AiReceptionist = 'ai_receptionist';
+    case Webhooks = 'webhooks';
+    case HubSpot = 'hubspot';
+    case Sso = 'sso';
+    case Api = 'api';
+    case QueueSkills = 'queue_skills';
+    case ApiCalls = 'api_calls';
+    case Monitoring = 'monitoring';
+    case Reports = 'reports';
+    case QueueReports = 'queue_reports';
 
     public function label(): string
     {
@@ -43,6 +52,15 @@ enum Feature: string
             self::LiveWallboard => 'Live wallboard',
             self::AiSearch => 'AI search across calls',
             self::AiReceptionist => 'AI receptionist',
+            self::Webhooks => 'Webhooks and Zapier',
+            self::HubSpot => 'HubSpot CRM',
+            self::Sso => 'Single sign-on and directory sync',
+            self::Api => 'API access',
+            self::QueueSkills => 'Queue priority and backup agents',
+            self::ApiCalls => 'Placing calls over the API',
+            self::Monitoring => 'Supervisor listen, whisper and barge',
+            self::Reports => 'Reports and export',
+            self::QueueReports => 'Queue and agent reports',
         };
     }
 }

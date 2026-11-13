@@ -54,7 +54,7 @@ class WallboardTest extends TestCase
 
     private function data(): array
     {
-        return $this->actingAs($this->owner)->getJson('/admin/wallboard/data')->assertOk()->assertHeader('Cache-Control', 'no-store, private')->json();
+        return $this->actingAs($this->owner)->getJson('/wallboard/data')->assertOk()->assertHeader('Cache-Control', 'no-store, private')->json();
     }
 
     public function test_shows_live_calls_queues_and_who_is_busy(): void
@@ -104,18 +104,40 @@ class WallboardTest extends TestCase
     {
         Call::create(['carrier_sid' => self::callId(1), 'direction' => 'inbound', 'from' => '</script><script>alert(1)</script>', 'status' => 'ringing']);
 
-        $this->actingAs($this->owner)->get('/admin/wallboard')->assertOk()
+        $this->actingAs($this->owner)->get('/wallboard')->assertOk()
             ->assertSee('data-wallboard', false)
             ->assertDontSee('</script><script>alert(1)', false);
     }
 
-    public function test_admins_only_and_pro_only(): void
+    public function test_everyone_can_see_it_but_only_on_pro(): void
     {
-        $this->actingAs($this->ann)->get('/admin/wallboard')->assertForbidden();
-        $this->actingAs($this->ann)->getJson('/admin/wallboard/data')->assertForbidden();
+        $this->actingAs($this->ann)->get('/wallboard')->assertOk()->assertDontSee('data-monitor', false);
+        $this->actingAs($this->ann)->getJson('/wallboard/data')->assertOk();
+        $this->actingAs($this->ann)->get('/admin/wallboard')->assertRedirect('/wallboard');
 
         $this->usePlan(Plan::Plus);
-        $this->actingAs($this->owner)->get('/admin/wallboard')->assertRedirect(route('dashboard'));
-        $this->actingAs($this->owner)->getJson('/admin/wallboard/data')->assertStatus(402);
+        $this->actingAs($this->owner)->get('/wallboard')->assertRedirect(route('dashboard'));
+        $this->actingAs($this->owner)->getJson('/wallboard/data')->assertStatus(402);
+    }
+
+    public function test_admins_can_hide_callers_numbers_from_everyone_else(): void
+    {
+        Call::create(['carrier_sid' => self::callId(7), 'direction' => 'inbound', 'from' => '+447700900123', 'to' => '+441522000000', 'status' => 'answered']);
+
+        // Shown by default.
+        $this->actingAs($this->ann)->getJson('/wallboard/data')->assertJsonPath('live.0.from', '+447700900123');
+        $this->actingAs($this->ann)->get('/wallboard')->assertOk()->assertDontSee('Who sees what');
+
+        $this->actingAs($this->ann)->put('/admin/wallboard/settings', ['hide_numbers' => 1])->assertForbidden();
+        $this->actingAs($this->owner)->get('/wallboard')->assertOk()->assertSee('Who sees what');
+        $this->actingAs($this->owner)->put('/admin/wallboard/settings', ['hide_numbers' => 1])->assertRedirect();
+
+        $this->actingAs($this->ann)->getJson('/wallboard/data')
+            ->assertJsonPath('live.0.from', null)->assertJsonPath('live.0.to', null)->assertJsonPath('live.0.direction', 'inbound');
+        $this->actingAs($this->ann)->get('/wallboard')->assertOk()->assertDontSee('+447700900123');
+        $this->actingAs($this->owner)->getJson('/wallboard/data')->assertJsonPath('live.0.from', '+447700900123');
+
+        $this->actingAs($this->owner)->put('/admin/wallboard/settings', ['hide_numbers' => 0]);
+        $this->actingAs($this->ann)->getJson('/wallboard/data')->assertJsonPath('live.0.from', '+447700900123');
     }
 }

@@ -42,6 +42,7 @@
                         @elseif ($u->isOwner())
                             <span class="pill">Owner</span>
                         @else
+                            @if ($u->isSuspended())<span class="pill off">Switched off by your directory</span>@endif
                             <form method="POST" action="{{ route('admin.users.update', $u) }}" class="row">
                                 @csrf @method('PATCH')
                                 <select name="role" aria-label="Role for {{ $u->name }}" data-autosubmit>
@@ -98,7 +99,12 @@
                                 </form>
                             @endunless
                             @unless ($u->isOwner() || $u->is(auth()->user()))
-                                @unless ($u->canSignIn())
+                                @if ($u->isSuspended())
+                                    <form method="POST" action="{{ route('admin.users.reactivate', $u) }}" data-confirm="Let {{ $u->name }} sign in again?">
+                                        @csrf @method('PATCH')
+                                        <button class="btn ghost small" type="submit">Reactivate</button>
+                                    </form>
+                                @elseif (! $u->canSignIn())
                                     <form method="POST" action="{{ route('admin.users.type', $u) }}" class="row"
                                           data-confirm="Give {{ $u->name }} a sign-in?{{ $u->isForwardOnly() ? " They'll count as one of your plan's users." : '' }} They'll be emailed a link to set a password.">
                                         @csrf @method('PATCH')
@@ -108,7 +114,7 @@
                                         </select>
                                         <button class="btn ghost small" type="submit">Give a sign-in</button>
                                     </form>
-                                @endunless
+                                @endif
                                 @unless ($u->isPhoneOnly())
                                     <form method="POST" action="{{ route('admin.users.type', $u) }}"
                                           data-confirm="Make {{ $u->name }} desk phones only? {{ $u->isForwardOnly() ? "They'll count as one of your plan's users. Add their phone under Phones and apps." : "They'll be signed out everywhere and lose their softphone and passkeys. Their desk phones, ring groups and voicemail stay." }}">

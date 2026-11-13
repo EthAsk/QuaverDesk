@@ -236,9 +236,54 @@ never transferred or parked**: they go straight back to the caller.
 
 The voice server needs `mod_valet_parking` (see [docs/VOICE-SERVER.md](docs/VOICE-SERVER.md)).
 
+### Reports and export (Plus; queue and people reports Pro)
+
+**Admin → Reports.** Pick a date range (up to a year, UK time):
+
+- **Summary, by day and by hour** (Plus): incoming, outgoing and internal calls,
+  missed incoming calls, the share answered, average call length and talk time.
+  The hourly chart shows when incoming calls arrive.
+- **Download calls (CSV)** (Plus): every call in the range, optionally just
+  incoming, outgoing or internal. Text that could be read as a spreadsheet
+  formula is defused.
+- **Queues** (Pro): for each queue the callers offered, answered, abandoned and
+  overflowed, average and longest wait, and service level (the share answered
+  within 30 seconds). Waiting runs from joining to being answered or giving up,
+  so it includes the time phones rang.
+- **People** (Pro): calls each person answered, made and missed, and their talk
+  time.
+- **Emailed report** (Pro): admins can get last week's report every Monday or last
+  month's on the 1st, with the calls attached as a CSV. Needs the scheduler
+  running (`php artisan schedule:work` or the cron entry) and the queue worker.
+
+### Call monitoring: listen, whisper, barge (Pro)
+
+**Admin → Call monitoring**, then the **live wallboard**. A chosen admin picks a
+call in progress and chooses:
+
+- **Listen**: they hear both sides and can't be heard.
+- **Whisper**: they can talk and only your person hears them (coaching).
+- **Barge**: they join the call and both sides hear them (asks to confirm first).
+
+It rings the supervisor's own phone, and they answer it to start. Safeguards:
+
+- **Told first.** The owner confirms that callers and staff are told calls may be
+  monitored (recording notice, privacy notice, employment terms) before anyone
+  can use it. The page can't tell people for you: check your notices.
+- **Chosen people only.** The owner picks which admins may monitor; nobody can
+  until then. (The wallboard is an admin page, so supervisors are admins.)
+- **Never on emergency calls** (999/112), never on your own call, and only on a
+  call that's still going.
+- **Logged.** Every attempt, with who, which call, how and what came of it, is
+  listed on the monitoring page.
+
+Needs testing on a live voice server before relying on it: it uses FreeSWITCH's
+eavesdrop settings, and which side of a call is "your person" is worked out from
+whether it was incoming or outgoing.
+
 ### Live wallboard (Pro)
 
-**Admin → Live wallboard.** A page for a screen on the wall, updated every 5
+**Wallboard** (in everyone's menu). A page for a screen on the wall, updated every 5
 seconds:
 
 - **Today:** live calls, callers waiting, calls in, calls out, missed calls and
@@ -253,12 +298,144 @@ seconds:
 voice server; if it can't be reached, everything else still updates and people
 show as unknown.
 
+Numbers show to everyone by default. An admin can tick **Hide callers' numbers** at the foot of the wallboard so
+only admins see them; everyone else still sees who's on each call, the queues and the totals.
+
+### Single sign-on (Pro)
+
+**Admin → Single sign-on.** People sign in with their Microsoft Entra or Google
+Workspace account from a button on the sign-in page. Each provider needs an app
+you register with them (the page says how and shows the redirect URI to give
+them), then its client id and secret here. The secret is stored encrypted and
+never shown again.
+
+- **Only people you've added.** Signing in this way never creates an account.
+  The person must already be under Users with the same email address; the first
+  time they sign in, their provider identity is remembered, so a later change of
+  email can't be used to take over their account.
+- **Only your organisation.** Microsoft sign-in is limited to your own directory
+  (tenant id) and Google to your Workspace domain, and the email must be
+  verified. Anyone else with a Microsoft or Google account is refused.
+- **Two-factor still applies.** Someone with two-factor turned on is asked for
+  their code after the provider, and an admin without it is sent to set it up
+  before using admin pages. Passwords and passkeys keep working.
+- Sign-in is by OpenID Connect (authorization code with PKCE) with state and
+  nonce checks.
+
+**Directory sync (SCIM).** Under the same page, *Turn on directory sync* gives a
+tenant URL and a token to paste into Microsoft Entra (Enterprise application →
+Provisioning), Okta or any identity provider that speaks SCIM 2.0. Then:
+
+- People given access in the directory are added here as ordinary users, with
+  their name and email kept in step.
+- When someone leaves (or is removed from the app) they're **switched off, never
+  deleted**: they can't sign in, their sessions end and they're logged out of
+  their queues, but their voicemail, extension and history stay. Admins can
+  reactivate or remove them under Users. A desk phone in the office keeps ringing
+  until an admin reassigns it.
+- New people count towards the plan's users. When it's full the directory is
+  told, and nobody is added.
+- The owner is never changed from the directory, and nobody can be made an
+  admin from it. A new token replaces the old one; only its hash is stored.
+
+### HubSpot CRM (Pro)
+
+**Admin → HubSpot.** Connect with a HubSpot *private app* token (Settings →
+Integrations → Private Apps, with the contacts and calls scopes listed on the
+page). The token is yours, stored encrypted and never shown again.
+
+- **Calls are logged.** When an incoming or outgoing call ends, it's logged as a
+  call on the HubSpot contact whose phone or mobile number matches: direction,
+  who took it, when, how long, and whether it was answered. Calls between your
+  own people aren't logged. A number that isn't in HubSpot is skipped, or made
+  into a contact if you tick that.
+- **Summaries follow.** When the AI summary for the call's recording or voicemail
+  is ready, the same HubSpot call gets the summary, action items, sentiment and a
+  link to the recording (people sign in here to open it). Each part can be turned
+  off.
+- **Who's calling.** For an incoming call from a number that's a HubSpot contact,
+  the phone rings with their name and company (for example "Sam Taylor (Hilltop
+  Builders)") instead of just the number, and call history shows it too. The
+  lookup never holds a call up: answers are remembered for 6 hours, it gives up
+  after 2 seconds, and after a failure it stops asking for 2 minutes. It can be
+  turned off on the HubSpot page.
+- **Click to call.** HubSpot's phone numbers are `tel:` links. Choose *Use for
+  phone links* on the Phone page and clicking one opens the phone with the number
+  ready to dial.
+- If HubSpot is busy or down, the update is tried again (1 minute, 5 minutes,
+  30 minutes, 2 hours). A wrong token or missing scope is shown on the HubSpot
+  page. Needs the queue worker running.
+
+### API (Plus and Pro)
+
+**Admin → API.** Make a token (shown once, only its hash is kept) and send it as
+`Authorization: Bearer <token>` to `/api/v1`: `/me`, `/users`, `/users/{id}`,
+`/numbers`, `/calls` (with the caller's name when HubSpot knew them; filters `from`, `to`, `direction`, `number`, `user_id`) and
+`/calls/{id}`. Read-only, JSON, paged (up to 100), 120 requests a minute per
+token. It never returns recordings, transcripts, passwords or keys. For being told
+when something happens, use webhooks.
+
+**Placing calls (Pro).** A separate *calling token* (Admin → API) lets your
+software ring someone's phones and, when they answer, dial a number for them:
+`POST /api/v1/calls` with `{"user_id": 12, "to": "+447700900123"}`. Read-only
+tokens can never do this. The safeguards:
+
+- Nothing is dialled outbound until the person's own phone answers, and then the
+  call goes out under their normal calling rules, limits, trunk and call charges.
+- Each token is for chosen people only, UK numbers only unless you list other
+  countries, and never premium-rate (09, 070), emergency numbers, extensions or
+  feature codes.
+- Per-token limits on calls a minute and an hour (defaults 10 and 60), minutes a
+  day (120) and calls in progress (2 for the token and for each person).
+- Send an `Idempotency-Key` header: the same key within 10 minutes is the same
+  request, so a retry never places a second call. `GET /api/v1/call-requests/{id}`
+  shows how it went.
+- Every request, including refusals, is listed on the API page with the token,
+  person, number, result and source address, and calls are marked "API" in call
+  history. Admins are emailed when a calling token is made, when a limit is hit
+  (once a day) and on the first call to a new country. *Pause all calling* stops
+  every token at once, and the hosted service's operator has an off switch for
+  everyone (`API_CALLS_ENABLED=false`).
+
+### Webhooks and Zapier (Plus and Pro)
+
+**Admin → Webhooks.** Tell another system when something happens: add the
+address it gave you (Zapier's *Catch Hook*, Make, n8n, or your own software) and
+pick which of these to send:
+
+| Event | When |
+| --- | --- |
+| `call.started` | A call starts, incoming or outgoing |
+| `call.ended` | A call ends (with `duration_seconds`) |
+| `voicemail.received` | A voicemail, or a message the AI receptionist took, arrives |
+| `recording.ready` | A call recording is saved |
+| `ai.summary_ready` | The summary, action items and sentiment for a call or voicemail are ready |
+
+Each event is a `POST` of flat JSON (`id`, `event`, `created_at`, then the
+event's own fields such as `from`, `to`, `status`, `user_name`), so Zapier shows
+every field to pick from. Transcripts and audio are never sent: use the `url`
+field to open the recording in QuaverDesk.
+
+- **Signed.** Every request has `X-QuaverDesk-Signature: t=<unix time>,v1=<hex>`,
+  where `v1` is the HMAC-SHA256 of `<t>.<raw body>` with the endpoint's signing
+  secret (shown once when the endpoint is made; replace it any time).
+- **Retried.** Anything but a 2xx within 10 seconds is tried again after 1
+  minute, 5 minutes, 30 minutes, 2 hours, 6 hours and 24 hours. The same event
+  can therefore arrive twice: ignore an `id` you've already seen.
+- **Safe.** `https://` only. Addresses on the server's own network (loopback,
+  link-local and, on the hosted service, private ranges) are refused, redirects
+  aren't followed, and the address checked is the address connected to.
+- **Visible.** Each endpoint shows its last 25 deliveries, with the reply code or
+  error, and a *Send a test event* button. Deliveries are kept for 7 days.
+
+Needs the queue worker running (`php artisan queue:work`), as AI processing does.
+
 ### Call queues
 
 Plus and Pro. A queue holds callers in turn: they hear its greeting, then hold
 music (the queue's own or the company's) and their place in the queue ("You are
 number 2") when they join, when it moves and every minute. When it's their turn,
-the queue's free agents ring together while the caller keeps hearing the music;
+the queue's free agents ring (together, or by the queue's **Who to ring** setting: longest idle first, round robin, fewest calls today, or on Pro by priority with backup agents; with one agent at a time, no answer means the next round tries someone else) while the caller keeps hearing the music;
 an agent already on a call is skipped. If nobody answers, the caller holds again
 and is rung again. After the queue's longest wait, or straight away when no
 agent is logged in (unless you untick that), the caller goes to the queue's

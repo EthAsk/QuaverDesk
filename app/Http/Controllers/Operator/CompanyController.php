@@ -5,14 +5,14 @@ namespace App\Http\Controllers\Operator;
 use App\Domain\Licensing\Plan;
 use App\Http\Controllers\Controller;
 use App\Jobs\SyncVoiceServer;
-use App\Mail\UserInvited;
 use App\Models\OperatorAudit;
 use App\Models\DeskPhoneEvent;
 use App\Models\SipTrunk;
 use App\Models\SupportSession;
 use App\Models\Tenant;
 use App\Models\User;
-use App\Support\Invites;
+use App\Tenancy\CallCharges;
+use App\Tenancy\CompanyOwner;
 use App\Tenancy\Quotas;
 use App\Tenancy\TenantData;
 use App\Tenancy\Tenancy;
@@ -20,8 +20,6 @@ use Carbon\CarbonInterface;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Str;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
@@ -57,16 +55,7 @@ class CompanyController extends Controller
         $tenant = Tenant::query()->create($data);
         $operator = $request->user('operator');
 
-        $link = $this->tenancy->run($tenant, function () use ($tenant, $data, $operator) {
-            $owner = new User(['name' => $data['owner_name'], 'email' => strtolower($data['owner_email']), 'password' => Str::password(32)]);
-            $owner->role = User::ROLE_OWNER;
-            $owner->save();
-
-            $link = $this->tenancy->withUrlsOf($tenant, fn () => Invites::link($owner));
-            Mail::to($owner)->queue(new UserInvited($owner, $link, config('app.name').' ('.$operator->name.')'));
-
-            return $link;
-        });
+        $link = app(CompanyOwner::class)->invite($tenant, $data['owner_name'], $data['owner_email'], config('app.name').' ('.$operator->name.')');
         OperatorAudit::record('company.created', $tenant, ['owner' => strtolower($data['owner_email'])]);
 
         return redirect()->route('operator.companies.show', $tenant)
@@ -82,7 +71,8 @@ class CompanyController extends Controller
             'company' => $tenant,
             'usage' => $this->usage()[$tenant->id] ?? null,
             'lastMonth' => $this->usage(now()->subMonthNoOverflow()->startOfMonth(), now()->startOfMonth())[$tenant->id] ?? null,
-            'quota' => $this->tenancy->run($tenant, fn () => ['storage' => app(Quotas::class)->storageBytes(), 'outside' => app(Quotas::class)->outsideSecondsThisMonth()]),
+            'quota' => $this->tenancy->run($tenant, fn () => ['charges' => CallCharges::enabled() ? CallCharges::usage($tenant->monthly_minutes) : null,
+                'storage' => app(Quotas::class)->storageBytes(), 'outside' => app(Quotas::class)->outsideSecondsThisMonth()]),
             'trunks' => $this->tenancy->run($tenant, fn () => SipTrunk::query()->orderBy('name')->get()),
             'people' => $this->tenancy->run($tenant, fn () => User::query()->orderByRaw("role = 'owner' desc")->orderBy('name')->get()),
             'phoneLog' => $this->tenancy->run($tenant, fn () => DeskPhoneEvent::query()->with('user:id,name')->latest('id')->limit(30)->get()),

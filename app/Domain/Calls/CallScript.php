@@ -109,6 +109,26 @@ final class CallScript
         return $this;
     }
 
+    /** Names the caller on the phones that ring (a name from the CRM instead of just their number). */
+    public function callerName(string $name): self
+    {
+        $this->steps[] = ['caller_name', $name];
+
+        return $this;
+    }
+
+    /**
+     * While this call goes on, whoever it is put through to can press $key to have the voice server send
+     * $digits back to the caller's device (for example, a code a device acts on). Key presses from the
+     * caller's side are never listened to.
+     */
+    public function keySendsDigits(string $key, string $digits): self
+    {
+        $this->steps[] = ['key_sends_digits', $key, $digits];
+
+        return $this;
+    }
+
     public function hangup(): self
     {
         $this->steps[] = ['hangup'];

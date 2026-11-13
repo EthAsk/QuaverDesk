@@ -53,6 +53,36 @@ interface VoiceServer
     public function callNumber(string $e164, string $trunk, string $callerId, string $callId, string $url): void;
 
     /**
+     * Ring a person's phones (all at once) and, when one answers, run the call at $url. $callId is the id
+     * the voice server gives the call, so the call can be found again in the webhooks.
+     *
+     * @param  list<string>  $sipUsernames  the SIP usernames of their softphone and desk phones
+     *
+     * @throws \RuntimeException when the voice server can't place the call
+     */
+    public function callUser(array $sipUsernames, string $callId, string $label, string $url): void;
+
+
+    /**
+     * Ring a supervisor's phones and join whoever answers to a live call: they listen, whisper (only the agent
+     * hears them) or barge (both sides hear them). $agentLeg says which side of the call is our person.
+     *
+     * @param  list<string>  $sipUsernames  the supervisor's phones
+     * @param  string  $mode  listen | whisper | barge
+     * @param  string  $agentLeg  a | b
+     *
+     * @throws \RuntimeException when the voice server can't do it
+     */
+    public function monitorCall(array $sipUsernames, string $callId, string $mode, string $agentLeg): void;
+
+    /**
+     * Send key presses out on a call, to the phone or device at its far end.
+     *
+     * @throws \RuntimeException when the voice server can't do it
+     */
+    public function sendDtmf(string $callId, string $digits): void;
+
+    /**
      * Tell a registered desk phone to download its settings now (SIP NOTIFY check-sync).
      *
      * @throws \RuntimeException when the voice server can't be asked

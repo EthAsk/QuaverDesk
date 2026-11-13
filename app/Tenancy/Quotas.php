@@ -48,9 +48,11 @@ class Quotas
     }
 
     /**
-     * Seconds of outside calls this calendar month (UK time), incoming and
-     * outgoing, including calls still going. Running out stops outgoing calls
-     * only: incoming calls are still answered.
+     * Seconds of UK calls this calendar month (UK time), incoming and
+     * outgoing to UK landlines and mobiles (CallCharges::INCLUDED), including
+     * calls still going: what the monthly minutes cover. Running out stops
+     * outgoing calls only (after any paid extra, see CallCharges): incoming
+     * calls are still answered.
      */
     public function outsideSecondsThisMonth(): int
     {
@@ -58,18 +60,21 @@ class Quotas
             ->where(fn ($q) => $q->where(fn ($q) => $q->where('direction', 'inbound')->where('decision', '!=', 'reject'))
                 ->orWhere(fn ($q) => $q->where('direction', 'outbound')->where('decision', DialDecision::NUMBER)))
             ->where('status', '!=', 'rejected')->where('created_at', '>=', self::startOfMonth())
-            ->get(['duration_seconds', 'created_at']);
+            ->tap(fn ($q) => CallCharges::onOurTrunks($q)) // calls on the company's own trunks are theirs
+            ->get(['direction', 'to', 'duration_seconds', 'created_at']);
         $max = CallLimits::maxCallMinutes();
 
-        return (int) $calls->sum(fn (Call $c) => $c->countedSeconds($max));
+        return (int) $calls->filter(fn (Call $c) => CallCharges::counts(CallCharges::kind($c->direction, $c->to)))
+            ->sum(fn (Call $c) => $c->countedSeconds($max));
     }
 
-    /** Seconds of outside calls left this month; null when there's no monthly allowance. */
+    /** Seconds of UK calls left this month, including any paid extra; null when there's no monthly allowance. */
     public function outsideSecondsLeft(): ?int
     {
         $tenant = $this->tenant();
 
-        return $tenant === null ? null : max(0, $tenant->monthly_minutes * 60 - $this->outsideSecondsThisMonth());
+        return $tenant === null ? null
+            : max(0, $tenant->monthly_minutes * 60 + CallCharges::overageSeconds($tenant->monthly_minutes) - $this->outsideSecondsThisMonth());
     }
 
     public static function startOfMonth(): CarbonImmutable

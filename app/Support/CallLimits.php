@@ -6,7 +6,9 @@ use App\Domain\Telephony\DialDecision;
 use App\Mail\CallLimitReached;
 use App\Models\Call;
 use App\Models\Setting;
+use App\Models\SipTrunk;
 use App\Models\User;
+use App\Tenancy\CallCharges;
 use App\Tenancy\Quotas;
 use App\Tenancy\Tenancy;
 use Carbon\CarbonImmutable;
@@ -78,8 +80,15 @@ final class CallLimits
         if ($this->inProgress()->count() >= $limits['concurrent']) {
             return $this->refuse($user, 'concurrent', "All {$limits['concurrent']} outside lines are in use. Try again in a moment.");
         }
-        if ($this->quotas->outsideSecondsLeft() === 0) {
-            return $this->refuse($user, 'monthly', "Your company has used this month's {$this->quotas->tenant()->monthly_minutes} minutes of outside calls.");
+        // Minutes and call charges are only for calls on a trunk we supply.
+        $ours = CallCharges::ours(SipTrunk::defaultOutbound());
+        if ($ours && ($refusal = CallCharges::refusal((string) $decision->target))) {
+            return $refusal;
+        }
+        if ($ours && CallCharges::usesMinutes((string) $decision->target) && $this->quotas->outsideSecondsLeft() === 0) {
+            return $this->refuse($user, 'monthly', CallCharges::overageSeconds($this->quotas->tenant()->monthly_minutes) > 0
+                ? "Your company has used this month's {$this->quotas->tenant()->monthly_minutes} minutes of UK calls and the extra minutes allowed."
+                : "Your company has used this month's {$this->quotas->tenant()->monthly_minutes} minutes of UK calls.");
         }
 
         return $this->serviceRefusal();
@@ -115,12 +124,13 @@ final class CallLimits
     }
 
     /** The longest this call may last: the per-call maximum, or what's left of today's minutes. */
-    public function maxSeconds(User $user): int
+    public function maxSeconds(User $user, ?string $to = null): int
     {
         $limits = $this->settings();
 
-        $left = min($limits['max_call_minutes'] * 60, $limits['minutes_per_day'] * 60 - $this->secondsUsed($user),
-            $this->quotas->outsideSecondsLeft() ?? PHP_INT_MAX);
+        $monthly = ! CallCharges::ours(SipTrunk::defaultOutbound()) || ($to !== null && ! CallCharges::usesMinutes($to))
+            ? PHP_INT_MAX : ($this->quotas->outsideSecondsLeft() ?? PHP_INT_MAX);
+        $left = min($limits['max_call_minutes'] * 60, $limits['minutes_per_day'] * 60 - $this->secondsUsed($user), $monthly);
 
         return max(60, $left);
     }

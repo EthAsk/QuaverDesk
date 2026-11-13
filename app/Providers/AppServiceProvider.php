@@ -54,6 +54,10 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // Optional modules in modules/ (none, in the public release) register themselves.
+        $this->app->singleton(\App\Support\Modules::class);
+        \App\Support\Modules::discover($this->app);
+
         $this->app->singleton(Tenancy::class);
         $this->app->scoped(LicenceManager::class);
 
@@ -73,6 +77,8 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->bootTenancy();
+        \App\Webhooks\Observers::register();
+        \App\HubSpot\Observers::register();
 
         Mail::extend('graph', fn (array $config) => new GraphTransport(
             (string) $config['tenant_id'], (string) $config['client_id'], (string) $config['client_secret'],
@@ -156,7 +162,7 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('softphone-token', fn (Request $request) => Limit::perMinute(10)->by($request->user()?->id ?: $request->ip()));
 
         // @feature('ai_summaries') … @else … @endfeature
-        Blade::if('feature', fn (string $feature) => app(LicenceManager::class)->allows(Feature::from($feature)));
+        Blade::if('feature', fn (string $feature) => app(LicenceManager::class)->allowsKey($feature));
         // A partner's renamed install says "Powered by QuaverDesk" unless their licence pays for own branding.
         Blade::if('poweredby', fn () => ! app(LicenceManager::class)->hosted()
             && app(LicenceManager::class)->current()->showsPoweredBy((string) config('app.name')));

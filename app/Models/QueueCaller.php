@@ -20,12 +20,12 @@ class QueueCaller extends Model
     public const FRESH_SECONDS = 150;
 
     protected $fillable = ['call_queue_id', 'carrier_sid', 'from', 'joined_at', 'seen_at', 'ringing_until',
-        'announced_position', 'announced_at', 'ended_at', 'outcome'];
+        'announced_position', 'announced_at', 'ended_at', 'outcome', 'rung_agents'];
 
     protected function casts(): array
     {
         return ['joined_at' => 'datetime', 'seen_at' => 'datetime', 'ringing_until' => 'datetime',
-            'announced_at' => 'datetime', 'ended_at' => 'datetime'];
+            'announced_at' => 'datetime', 'ended_at' => 'datetime', 'rung_agents' => 'array'];
     }
 
     public function queue(): BelongsTo

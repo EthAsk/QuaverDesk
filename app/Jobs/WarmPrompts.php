@@ -51,6 +51,7 @@ class WarmPrompts implements ShouldQueue
     {
         return array_values(array_unique(array_filter([
             VoiceController::MSG_NOT_IN_SERVICE,
+            VoiceController::MSG_CONNECTING,
             OutboundScript::MSG_NO_CALLER_ID,
             OutboundScript::MSG_NO_TRUNK,
             InboundRouter::MSG_UNAVAILABLE,

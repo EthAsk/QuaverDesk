@@ -1,0 +1,7 @@
+[Unit]
+Description=QuaverDesk: re-apply the trunk firewall after a trunk change
+After=qd-trunk-firewall.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/qd-trunk-firewall

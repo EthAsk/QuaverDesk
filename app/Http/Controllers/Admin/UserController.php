@@ -314,6 +314,14 @@ class UserController extends Controller
         return back()->with('status', "{$user->name} is now ".($user->isAdmin() ? 'an admin' : 'a user').'.');
     }
 
+    /** Lets someone the directory switched off sign in again. (If it still says they've left, it will switch them off again.) */
+    public function reactivate(User $user): RedirectResponse
+    {
+        $user->forceFill(['suspended_at' => null])->save();
+
+        return back()->with('status', "{$user->name} can sign in again.");
+    }
+
     public function destroy(Request $request, User $user, UserTypes $types): RedirectResponse
     {
         abort_if($user->isOwner() || $user->is($request->user()), 403);

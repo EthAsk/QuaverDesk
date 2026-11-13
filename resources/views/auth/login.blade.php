@@ -22,6 +22,15 @@
         </div>
         <button class="btn call-btn" type="submit">Sign in</button>
     </form>
+    @feature('sso')
+        @php($ssoProviders = app(\App\Sso\SsoSettings::class)->readyProviders())
+        @if ($ssoProviders)
+            <div class="or"><span>or</span></div>
+            @foreach ($ssoProviders as $provider)
+                <a class="btn ghost call-btn" href="{{ route('sso.redirect', $provider) }}">Sign in with {{ \App\Sso\SsoSettings::PROVIDERS[$provider] }}</a>
+            @endforeach
+        @endif
+    @endfeature
     @feature('passkeys')
         <div id="passkey-login" hidden>
             <div class="or"><span>or</span></div>

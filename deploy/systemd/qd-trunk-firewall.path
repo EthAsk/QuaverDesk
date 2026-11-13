@@ -1,0 +1,10 @@
+[Unit]
+Description=QuaverDesk: re-apply the trunk firewall when the trunk list changes
+
+[Path]
+PathChanged=/etc/freeswitch/quaverdesk/acl/trunks.xml
+PathModified=/etc/freeswitch/quaverdesk/acl
+Unit=qd-trunk-firewall-reload.service
+
+[Install]
+WantedBy=multi-user.target

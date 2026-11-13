@@ -60,6 +60,11 @@ class IdentifyTenant
         $phoneOnly = ! $tenant->isActive() && $request->is(...self::EMERGENCY_PHONE);
         abort_if(! $tenant->isActive() && ! $phoneOnly, 403, 'This account is suspended. Contact QuaverDesk support.');
         View::share('companySuspended', ! $tenant->isActive());
+        // A partner's client: its pages credit the partner, and with own branding carry their name instead of ours.
+        View::share('providedBy', $tenant->partner_name ? ['name' => $tenant->partner_name, 'branded' => $tenant->partner_branding] : null);
+        if ($tenant->partner_name && $tenant->partner_branding) {
+            config(['app.name' => $tenant->partner_name]);
+        }
 
         $this->tenancy->set($tenant);
         // Each company's address is its own passkey site: a passkey made on one is never offered on another.

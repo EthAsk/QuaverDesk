@@ -38,7 +38,8 @@
         @csrf @method('PUT')
         <h2>Plan</h2>
         <p class="muted small">
-            This month: {{ number_format(intdiv($quota['outside'], 60)) }} of {{ number_format($company->monthly_minutes) }} minutes of calls to phone numbers ·
+            This month: {{ number_format(intdiv($quota['outside'], 60)) }} of {{ number_format($company->monthly_minutes) }} minutes of UK calls
+            @if (isset($quota['charges']) && $quota['charges']['total_pence'] > 0) (£{{ number_format($quota['charges']['total_pence'] / 100, 2) }} of calls charged on top) @endif ·
             {{ round($quota['storage'] / 1048576, 1) }} of {{ number_format($company->storage_mb) }} MB stored.
             When a company reaches a limit its admins are told; calls between colleagues and emergency calls are never limited.
         </p>
@@ -64,6 +65,8 @@
         </div>
         <button class="btn" type="submit">Save plan</button>
     </form>
+
+    @includeIf('operator.companies.billing')
 
     <div class="card">
         <h2>Trunks</h2>

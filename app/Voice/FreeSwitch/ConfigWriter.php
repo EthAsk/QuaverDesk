@@ -154,6 +154,15 @@ class ConfigWriter
             ] + $this->holdMusicFor($phone->user), ($cidrs = $phone->lockCidrs()) !== null ? implode(',', $cidrs) : null);
         }
 
+        // Modules' own devices sign in like phones.
+        foreach (app(\App\Support\Modules::class)->allSipUsers() as $device) {
+            $vars = $device['variables'];
+            if (isset($vars['effective_caller_id_name'])) {
+                $vars['effective_caller_id_name'] = self::name($vars['effective_caller_id_name']);
+            }
+            $out[$device['username']] = $this->user($device['username'], $device['password'], $vars, $device['allowed_ips'] ?? null);
+        }
+
         return $out;
     }
 

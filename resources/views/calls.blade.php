@@ -19,8 +19,8 @@
                     <tr>
                         <td>{{ $call->created_at->format('j M, H:i') }}</td>
                         <td>{{ $call->user?->name ?? '—' }}</td>
-                        <td>{{ $call->from ?? '—' }}</td>
-                        <td>{{ $call->to }}</td>
+                        <td>{{ $call->from ?? '—' }}@if ($call->caller_name)<div class="small muted">{{ $call->caller_name }}</div>@endif</td>
+                        <td>{{ $call->to }}@if ($call->api_call_id) <span class="pill">API</span>@endif</td>
                         <td>{{ ucfirst($call->direction) }}</td>
                         <td><span @class(['pill', 'warn' => in_array($call->status, ['rejected', 'failed', 'busy', 'no-answer'])])>{{ $call->status }}</span></td>
                         <td>{{ $call->duration_seconds !== null ? gmdate('i:s', $call->duration_seconds) : '—' }}</td>

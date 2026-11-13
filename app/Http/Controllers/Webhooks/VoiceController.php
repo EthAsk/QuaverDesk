@@ -34,6 +34,7 @@ use App\Support\RouteCallbackUrls;
 use App\Tenancy\CallTenant;
 use App\Tenancy\Tenancy;
 use App\Voice\CallQueueRunner;
+use App\Support\Modules;
 use App\Voice\CallRequest;
 use App\Voice\ParkingLot;
 use App\Voice\ReceptionistRunner;
@@ -56,6 +57,7 @@ use Illuminate\Support\Str;
  */
 class VoiceController extends Controller
 {
+    public const MSG_CONNECTING = 'Connecting your call.';
     public const MSG_NOT_IN_SERVICE = 'Sorry, this number is not in service.';
     public const MSG_PICK_UP_HOW = 'To pick up a parked call, dial star star and the slot number.';
     public const MSG_CANT_TRANSFER = 'Sorry, this call cannot be transferred.';
@@ -87,6 +89,11 @@ class VoiceController extends Controller
         $call = new CallRequest($request);
         if ($call->exiting()) {
             return $this->ended($call);
+        }
+
+        // A module's own device (it routes the call itself, whatever was dialled).
+        if (($script = app(Modules::class)->handleOutgoing($call)) !== null) {
+            return $this->reply($script);
         }
 
         $caller = $this->userFromIdentity($call->from());
@@ -130,6 +137,40 @@ class VoiceController extends Controller
             DialDecision::VOICEMAIL => app(VoicemailMenu::class)->start($caller),
             default => $this->dialOut($decision, $trunk, $caller),
         });
+    }
+
+    /**
+     * The person an API call request rang has answered. Now their call goes out as if they had dialled the
+     * number: the same calling rules, limits and trunk as any call of theirs. Only outside numbers: nothing
+     * else can be reached this way.
+     */
+    public function apiCall(Request $request): Response
+    {
+        $call = new CallRequest($request);
+        if ($call->exiting()) {
+            return $this->ended($call);
+        }
+
+        $log = Call::query()->where('carrier_sid', (string) $call->callId())->whereNotNull('api_call_id')->first();
+        $apiCall = $log ? \App\Models\ApiCall::query()->find($log->api_call_id) : null;
+        $user = $log?->user;
+        if ($apiCall === null || $user === null || (int) $request->query('request') !== $apiCall->id || ! Acknowledgement::currentAccepted()) {
+            return $this->reply((new CallScript())->hangup());
+        }
+
+        $decision = $this->decide($user, $apiCall->to);
+        if ($decision->type !== DialDecision::NUMBER) {
+            $apiCall->forceFill(['status' => 'refused', 'reason' => $decision->message ?? 'That call is not allowed.'])->save();
+            $log->forceFill(['status' => 'rejected', 'reason' => $decision->message ?? 'That call is not allowed.'])->save();
+
+            return $this->reply((new CallScript())->say($decision->message ?? 'That call is not allowed.')->hangup());
+        }
+
+        $apiCall->forceFill(['status' => 'answered'])->save();
+        $trunk = $this->trunkFor($decision);
+        $log->forceFill(['sip_trunk_id' => $trunk?->id, 'to' => $decision->target, 'decision' => $decision->type, 'status' => 'initiated'])->save();
+
+        return $this->reply((new CallScript())->say(self::MSG_CONNECTING)->append($this->dialOut($decision, $trunk, $user)));
     }
 
     /**
@@ -238,7 +279,10 @@ class VoiceController extends Controller
             default => null,
         };
 
+        $callerName = $refused === null && ! $onNet ? app(\App\HubSpot\CallerNames::class)->lookup($from) : null;
+
         $this->log($call, [
+            'caller_name' => $callerName,
             'sip_trunk_id' => $onNet ? null : $number?->sip_trunk_id,
             'leg' => $onNet ? Call::LEG_ON_NET : null,
             'direction' => 'inbound',
@@ -255,23 +299,25 @@ class VoiceController extends Controller
 
         $record = $number->record_calls && $recordingPolicy->canRecordCalls();
 
-        return app(InboundRouter::class)->forNumber(
+        $script = $callerName !== null ? (new CallScript())->callerName($callerName) : new CallScript();
+
+        return $script->append(app(InboundRouter::class)->forNumber(
             Destination::parse($number->destination) ?? Destination::hangup(),
             $number->schedule(),
             Destination::parse($number->closed_destination),
             now()->toDateTimeImmutable(),
             $record,
             $record ? $recordingPolicy->disclosure() : null,
-        );
+        ));
     }
 
     /**
      * A person here called a number another company on this service has (or
      * their own). It is connected directly, never out through one trunk and
      * back in through another. Each side logs it as it would a call through
-     * the trunks: an outside call for the caller (their minutes and limits,
-     * already checked) and an incoming call for the company called (their
-     * minutes, their routing). The rest of the call belongs to the company called.
+     * the trunks: an outside call for the caller (their limits, already
+     * checked) and an incoming call for the company called (their routing).
+     * No trunk is recorded, so it uses neither company's minutes. The rest of the call belongs to the company called.
      */
     private function connectOnNet(CallRequest $call, User $caller, PhoneNumber $number): Response
     {
@@ -287,7 +333,7 @@ class VoiceController extends Controller
             'decision' => DialDecision::NUMBER,
             'status' => 'completed',
         ]);
-        $maxSeconds = $this->limits->maxSeconds($caller);
+        $maxSeconds = $this->limits->maxSeconds($caller, $number->e164);
         $callerId = CallerId::default() ?? 'anonymous';
 
         return $this->tenancy->run($number->tenant, fn () => $this->reply(
@@ -629,7 +675,7 @@ class VoiceController extends Controller
             $trunk?->dialTrunk(),
             $recording,
             VoiceUrl::to('webhooks.voice.after-dial', ['next' => (string) Destination::hangup()]),
-            $caller ? $this->limits->maxSeconds($caller) : null,
+            $caller ? $this->limits->maxSeconds($caller, $decision->type === DialDecision::NUMBER ? $decision->target : null) : null,
         );
     }
 

@@ -19,7 +19,7 @@ class CallQueue extends Model
     public const HOLD_SLICE_SECONDS = 20; // hold music between checks for a free agent
 
     protected $fillable = ['name', 'extension', 'greeting', 'ring_seconds', 'max_wait_seconds', 'announce_position',
-        'hold_sound_id', 'overflow', 'overflow_when_empty'];
+        'hold_sound_id', 'overflow', 'overflow_when_empty', 'strategy'];
 
     protected function casts(): array
     {
@@ -29,7 +29,7 @@ class CallQueue extends Model
     /** Its agents, logged in or not. */
     public function members(): BelongsToMany
     {
-        return $this->belongsToMany(User::class)->withPivot('logged_in');
+        return $this->belongsToMany(User::class)->withPivot('logged_in', 'priority');
     }
 
     /** Agents taking its calls now. */

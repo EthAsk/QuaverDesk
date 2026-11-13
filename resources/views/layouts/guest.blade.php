@@ -20,6 +20,9 @@
         @yield('content')
     </div>
     @poweredby <p class="small muted" style="text-align:center">Powered by QuaverDesk</p> @endpoweredby
+    @if ($providedBy ?? null)
+        <p class="small muted" style="text-align:center">Provided by {{ $providedBy['name'] }}@unless ($providedBy['branded']) · Powered by QuaverDesk @endunless</p>
+    @endif
 </div>
 @stack('scripts')
 </body>

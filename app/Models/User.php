@@ -90,7 +90,13 @@ class User extends Authenticatable implements PasskeyUser
     /** Can sign in to the web app (and so has a softphone): not forward-only or desk phones only. */
     public function canSignIn(): bool
     {
-        return ! $this->isForwardOnly() && ! $this->isPhoneOnly();
+        return ! $this->isForwardOnly() && ! $this->isPhoneOnly() && ! $this->isSuspended();
+    }
+
+    /** Switched off by the company's directory (someone who left): can't sign in, but nothing is deleted. */
+    public function isSuspended(): bool
+    {
+        return $this->suspended_at !== null;
     }
 
     /** Their phones may call colleagues (and 999/112) but no outside numbers. */

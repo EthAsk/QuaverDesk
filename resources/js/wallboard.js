@@ -1,4 +1,4 @@
-// Live wallboard: polls /admin/wallboard/data and redraws. Built with DOM methods only (no innerHTML),
+// Live wallboard: polls /wallboard/data and redraws. Built with DOM methods only (no innerHTML),
 // so names and numbers from calls can never become markup.
 const root = document.querySelector('[data-wallboard]');
 
@@ -28,6 +28,29 @@ if (root) {
     const since = () => (Date.now() - receivedAt) / 1000; // live timers keep ticking between polls
     const fill = (name, ...nodes) => root.querySelector(`[data-part="${name}"]`).replaceChildren(...nodes);
 
+    const monitorNote = el('div', { class: 'small muted', 'aria-live': 'polite' });
+
+    function monitorButton(callId, mode) {
+        const button = el('button', { type: 'button', class: 'btn ghost small' }, mode[0].toUpperCase() + mode.slice(1));
+        button.addEventListener('click', async () => {
+            if (mode === 'barge' && !window.confirm('Join this call? Both people will hear you.')) return;
+            button.disabled = true;
+            try {
+                const res = await fetch(`${root.dataset.monitor}/${callId}`, {
+                    method: 'POST',
+                    headers: { 'X-CSRF-TOKEN': root.dataset.csrf, 'Content-Type': 'application/json', Accept: 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ mode }),
+                });
+                monitorNote.textContent = (await res.json()).message || '';
+            } catch {
+                monitorNote.textContent = 'Could not reach the phone system.';
+            }
+            setTimeout(() => { button.disabled = false; }, 3000);
+        });
+        return button;
+    }
+
     const tile = (label, value, tone = '') => el('div', { class: 'wb-tile ' + tone }, el('div', { class: 'wb-value' }, value), el('div', { class: 'wb-label' }, label));
 
     function draw() {
@@ -56,12 +79,15 @@ if (root) {
         fill('live', data.live.length === 0
             ? el('p', { class: 'muted' }, 'No calls right now.')
             : el('table', {},
-                el('thead', {}, el('tr', {}, ['', 'From', 'To', 'Who', 'Time'].map((h) => el('th', {}, h)))),
+                el('thead', {}, el('tr', {}, ['', 'From', 'To', 'Who', 'Time', root.dataset.monitor ? 'Listen in' : null].filter((h) => h !== null).map((h) => el('th', {}, h)))),
                 el('tbody', {}, data.live.map((c) => el('tr', {},
                     el('td', {}, el('span', { class: 'pill' + (c.direction === 'inbound' ? '' : ' off') }, c.direction === 'inbound' ? 'In' : c.direction === 'outbound' ? 'Out' : 'Internal')),
                     el('td', {}, c.from || '—'), el('td', {}, c.to || '—'), el('td', {}, c.person || '—'),
                     el('td', { class: 'wb-num' }, clock(c.seconds + since())),
+                    root.dataset.monitor ? el('td', {}, ['listen', 'whisper', 'barge'].map((mode) => monitorButton(c.id, mode))) : null,
                 )))));
+
+        if (root.dataset.monitor) root.querySelector('[data-part="live"]').append(monitorNote);
 
         const label = { busy: 'On a call', free: 'Free', unknown: '—' };
         fill('people', el('div', { class: 'wb-people' }, data.people.map((p) => el('div', { class: 'wb-person wb-' + p.status },

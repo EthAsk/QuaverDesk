@@ -115,7 +115,7 @@ class VoiceTenancyTest extends TestCase
         $this->assertStringContainsString("']user/user-{$bob->id}@voice.test\"", $xml);
     }
 
-    public function test_a_call_to_another_companys_number_is_connected_directly_and_counts_for_both(): void
+    public function test_a_call_to_another_companys_number_is_connected_directly_and_is_free(): void
     {
         $acmeOwner = $this->in($this->acme, fn () => User::query()->first());
         $bob = $this->in($this->bolt, fn () => User::factory()->create());
@@ -133,7 +133,7 @@ class VoiceTenancyTest extends TestCase
         $this->assertStringContainsString("user/user-{$bob->id}@voice.test", $xml);
         $this->assertStringNotContainsString('sofia/gateway', $xml);
 
-        // Acme: an outside call (its minutes and limits). Bolt: an incoming call from Acme's number; later steps are Bolt's.
+        // Acme: an outside call (its limits). Bolt: an incoming call from Acme's number; later steps are Bolt's.
         $out = $this->in($this->acme, fn () => Call::query()->sole());
         $this->assertSame(['outbound', 'number', Call::LEG_ON_NET, self::callId(80), '+442079460000', null],
             [$out->direction, $out->decision, $out->leg, $out->parent_sid, $out->to, $out->sip_trunk_id]);
@@ -146,8 +146,9 @@ class VoiceTenancyTest extends TestCase
 
         $this->assertSame(90, $this->in($this->acme, fn () => Call::query()->sole()->duration_seconds));
         $this->assertSame(90, $this->in($this->bolt, fn () => Call::query()->sole()->duration_seconds));
-        $this->assertSame(90, $this->in($this->acme, fn () => app(\App\Tenancy\Quotas::class)->outsideSecondsThisMonth()));
-        $this->assertSame(90, $this->in($this->bolt, fn () => app(\App\Tenancy\Quotas::class)->outsideSecondsThisMonth()));
+        // No carrier was involved, so it uses neither company's minutes.
+        $this->assertSame(0, $this->in($this->acme, fn () => app(\App\Tenancy\Quotas::class)->outsideSecondsThisMonth()));
+        $this->assertSame(0, $this->in($this->bolt, fn () => app(\App\Tenancy\Quotas::class)->outsideSecondsThisMonth()));
     }
 
     public function test_a_suspended_companys_number_is_not_connected_directly(): void

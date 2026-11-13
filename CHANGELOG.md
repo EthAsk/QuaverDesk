@@ -9,6 +9,53 @@ version (1.1.0) adds features, and a major version (2.0.0) may need changes on y
 
 ## Unreleased
 
+## 1.4.0 (13 November 2026)
+
+- **Laravel 13:** the framework, the build tools (Vite 8) and the CI actions are on their latest major versions. Run
+  `sudo quaverdesk-deploy` as usual; the server needs PHP 8.3 or later.
+- **Security updates:** Laravel 12.72 and the Symfony components it uses, which fixes the advisories reported against
+  them, plus Fortify, passkeys, jssip and Vite patch releases. Run `sudo quaverdesk-deploy` as usual.
+- **Simpler menu:** admin pages are now in groups you open and close (Phone system, People & devices, Voicemail &
+  sounds, AI, Calls & reports, Integrations, Account). The plan, seats and licence details moved from the dashboard to
+  a new **Admin → Overview**; everyone's first page is now **Home**.
+- **Wallboard for everyone (Pro):** the live wallboard is now in every person's menu at `/wallboard` (the old
+  `/admin/wallboard` address redirects). Listening in on calls is still only for the admins chosen as supervisors.
+  Admins can tick **Hide callers' numbers** on the wallboard so only admins see them; numbers show by default.
+- **Trunk firewall (self-hosted):** the trunk ports (5080 and 5081) now only accept your SIP trunk providers, and the
+  firewall follows **Admin → SIP trunks** by itself. A new fail2ban jail bans SIP scanners that never send a
+  password. One-off setup for existing installs: see "Firewall" in docs/VOICE-SERVER.md. If you added ufw rules per
+  provider before, you can replace them with `ufw allow 5080` and `ufw allow 5081/tcp` once it's running.
+
+## 1.3.0 (10 November 2026)
+
+- **Admin → System (self-hosted):** the version, health checks and backups in one place: **Back up now**, the last
+  backup's result, and downloads of the encrypted backups. Needs a one-off step for existing installs: see "A8.
+  Background worker, scheduler and backups" in docs/DEPLOYMENT.md (a sudoers rule and a status folder).
+- **Update available:** admins see a notice when a newer release is out. Updating is still `sudo quaverdesk-deploy`,
+  which now takes a backup first and runs a health check afterwards (`php artisan quaverdesk:health`). Turn the daily
+  check off with `QUAVERDESK_UPDATE_CHECK=false`.
+- **Call monitoring (Pro):** chosen admins can listen in on, whisper to, or join a live call from the wallboard. The owner
+  confirms callers are told first; emergency calls are never monitored; every use is logged. Under Admin → Call monitoring.
+- **Click-to-call over the API (Pro):** a calling token can ring a person's phones and dial a number for them once
+  they answer, with per-token limits, UK-only by default, an audit trail and a pause switch. Under Admin → API.
+- **Queue strategies (Plus; priority and backups Pro):** queues can ring the agent idle longest, the next in turn, or the
+  one with the fewest calls today, instead of everyone; on Pro, first choices ring before backups.
+- **Reports and export (Plus, queue and people reports Pro):** call summaries by day and hour, CSV download of calls,
+  queue reports with waits and service level, a report per person, and a weekly or monthly emailed report. Under
+  Admin → Reports.
+- **API (Plus and Pro):** a read-only API for your own software: people, numbers and call history, with tokens made
+  under Admin → API.
+- **Directory sync (Pro):** Microsoft Entra, Okta and other identity providers can add people, keep their names and
+  emails in step and switch them off when they leave (SCIM 2.0). Nobody is deleted. Under Admin → Single sign-on.
+- **HubSpot caller names (Pro):** incoming calls from a HubSpot contact show their name and company on the phone and in
+  call history.
+- **Single sign-on (Pro):** sign in with Microsoft Entra or Google Workspace, for people already added under Users.
+  Limited to your own directory or domain, and two-factor still applies. Under Admin → Single sign-on.
+- **HubSpot CRM (Pro):** calls are logged against the HubSpot contact with that number, with the AI summary and a
+  recording link added when ready. HubSpot's phone number links open the phone ready to dial. Under Admin → HubSpot.
+- **Webhooks and Zapier (Plus and Pro):** signed, retried webhooks for calls starting and ending, voicemails,
+  recordings and AI summaries, under Admin → Webhooks. Works with Zapier, Make and n8n.
+
 ## 1.2.0 (7 November 2026)
 
 - **Live wallboard (Pro):** live calls, queues, who's free and today's totals on one page for admins, updated every 5

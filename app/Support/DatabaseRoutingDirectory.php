@@ -74,7 +74,7 @@ class DatabaseRoutingDirectory implements RoutingDirectory
             $user->id,
             $callerId,
             $user->follow_me === User::FOLLOW_ME_AFTER ? $user->follow_me_delay : 0,
-            $this->limits->maxSeconds($user),
+            $this->limits->maxSeconds($user, $user->mobile),
             $trunk->id,
         ));
     }

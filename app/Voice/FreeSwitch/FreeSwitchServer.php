@@ -153,6 +153,70 @@ class FreeSwitchServer implements VoiceServer
         }
     }
 
+    public function callUser(array $sipUsernames, string $callId, string $label, string $url): void
+    {
+        if ($sipUsernames === [] || ! $this->domain()) {
+            throw new RuntimeException('Nobody to ring.');
+        }
+        foreach ($sipUsernames as $name) {
+            if (! preg_match('/^[A-Za-z0-9_-]{1,64}$/', (string) $name)) {
+                throw new RuntimeException('Refusing an unsafe value in a call.');
+            }
+        }
+        foreach ([[$callId, '/^[0-9a-f-]{36}$/'], [$url, '#^https?://[A-Za-z0-9.:/_?=&%-]+$#']] as [$value, $pattern]) {
+            if (! preg_match($pattern, $value)) {
+                throw new RuntimeException('Refusing an unsafe value in a call.');
+            }
+        }
+        $label = preg_replace('/[^A-Za-z0-9 ]/', '', $label) ?: 'Call';
+
+        // Commas ring every phone at once; whichever answers first takes the call.
+        $legs = implode(',', array_map(fn ($n) => "user/{$n}@{$this->domain()}", $sipUsernames));
+        $vars = "origination_uuid={$callId},origination_caller_id_name='{$label}',origination_caller_id_number=0,originate_timeout=30,ignore_early_media=true";
+        $reply = $this->api(fn (EventSocket $esl) => $esl->api("bgapi originate {{$vars}}{$legs} &httapi({httapi_profile=quaverdesk,url={$url}})"));
+        if (str_starts_with(trim($reply), '-ERR')) {
+            throw new RuntimeException('The voice server could not place the call.');
+        }
+    }
+
+    public function monitorCall(array $sipUsernames, string $callId, string $mode, string $agentLeg): void
+    {
+        if ($sipUsernames === [] || ! $this->domain() || ! preg_match('/^[0-9a-f-]{36}$/', $callId) || ! in_array($mode, ['listen', 'whisper', 'barge'], true) || ! in_array($agentLeg, ['a', 'b'], true)) {
+            throw new RuntimeException('Refusing an unsafe value in a call.');
+        }
+        foreach ($sipUsernames as $name) {
+            if (! preg_match('/^[A-Za-z0-9_-]{1,64}$/', (string) $name)) {
+                throw new RuntimeException('Refusing an unsafe value in a call.');
+            }
+        }
+
+        // eavesdrop joins the supervisor to the call: with nothing set they only listen to both sides, whisper
+        // sends their voice to our person only, and barge sends it to both.
+        $mix = match ($mode) {
+            'whisper' => ",eavesdrop_whisper_{$agentLeg}leg=true",
+            'barge' => ',eavesdrop_bridge_aleg=true,eavesdrop_bridge_bleg=true',
+            default => '',
+        };
+        $legs = implode(',', array_map(fn ($n) => "user/{$n}@{$this->domain()}", $sipUsernames));
+        $vars = "originate_timeout=30,origination_caller_id_name='Monitoring',origination_caller_id_number=0,ignore_early_media=true{$mix}";
+        $reply = $this->api(fn (EventSocket $esl) => $esl->api("bgapi originate {{$vars}}{$legs} &eavesdrop({$callId})"));
+        if (str_starts_with(trim($reply), '-ERR')) {
+            throw new RuntimeException('The voice server could not place the call.');
+        }
+    }
+
+    public function sendDtmf(string $callId, string $digits): void
+    {
+        if (! preg_match('/^[0-9a-f-]{36}$/', $callId) || ! preg_match('/^[0-9*#]{1,16}$/', $digits)) {
+            throw new RuntimeException('Refusing an unsafe value in a call.');
+        }
+
+        $reply = $this->api(fn (EventSocket $esl) => $esl->api("uuid_send_dtmf {$callId} {$digits}@250"));
+        if (str_starts_with(trim($reply), '-ERR')) {
+            throw new RuntimeException('The voice server could not send the code.');
+        }
+    }
+
     public function resyncPhone(string $sipUsername): void
     {
         if (! preg_match('/^[A-Za-z0-9_-]{1,64}$/', $sipUsername) || ! $this->domain()) {

@@ -10,6 +10,10 @@
         <testsuite name="Feature">
             <directory>tests/Feature</directory>
         </testsuite>
+        <!-- Optional modules' own tests (none in the public release). -->
+        <testsuite name="Modules">
+            <directory suffix="Test.php">modules</directory>
+        </testsuite>
     </testsuites>
     <source>
         <include>

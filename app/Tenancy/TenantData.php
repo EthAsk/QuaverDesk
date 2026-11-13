@@ -3,6 +3,7 @@
 namespace App\Tenancy;
 
 use App\Models\Acknowledgement;
+use App\Models\ApiToken;
 use App\Models\Call;
 use App\Models\CallQueue;
 use App\Models\DeskPhone;
@@ -19,6 +20,8 @@ use App\Models\SipTrunk;
 use App\Models\Sound;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Models\WebhookDelivery;
+use App\Models\WebhookEndpoint;
 use App\Support\RecordingStore;
 use App\Voice\Audio;
 use Illuminate\Database\Eloquent\Model;
@@ -39,12 +42,22 @@ class TenantData
      * @var list<class-string<Model>>
      */
     private const MODELS = [
-        DeskPhoneEvent::class, QueueCaller::class, Recording::class, Call::class, Acknowledgement::class, DeskPhone::class, PhoneNumber::class,
+        \App\Models\MonitorEvent::class, \App\Models\ApiCall::class, ApiToken::class, WebhookDelivery::class, WebhookEndpoint::class, DeskPhoneEvent::class, QueueCaller::class, Recording::class, Call::class, Acknowledgement::class, DeskPhone::class, PhoneNumber::class,
         Receptionist::class, IvrMenu::class, RingGroup::class, CallQueue::class, Mailbox::class, Sound::class, SipTrunk::class, Setting::class, User::class,
     ];
 
+    /**
+     * Installed modules' models first (they refer to the core's), then the core's.
+     *
+     * @return list<class-string<Model>>
+     */
+    private function models(): array
+    {
+        return [...app(\App\Support\Modules::class)->allTenantModels(), ...self::MODELS];
+    }
+
     /** Never exported: passwords and keys that would let someone sign in or call as the company. */
-    private const SECRET_SETTINGS = ['licence_key', 'provisioning'];
+    private const SECRET_SETTINGS = ['licence_key', 'provisioning', 'hubspot', 'sso', 'scim'];
 
     public function __construct(
         private readonly Tenancy $tenancy,
@@ -70,7 +83,7 @@ class TenantData
             $zip->addFromString('README.txt', $this->readme($tenant));
             $zip->addFromString('company.json', self::json($tenant->only(['name', 'slug', 'domain', 'status', 'created_at'])));
 
-            foreach (self::MODELS as $model) {
+            foreach ($this->models() as $model) {
                 $rows = $model::query()->orderBy('id')->get()
                     ->reject(fn (Model $m) => $m instanceof Setting && in_array($m->key, self::SECRET_SETTINGS, true))
                     ->map(fn (Model $m) => $this->exportable($m))
@@ -118,7 +131,7 @@ class TenantData
             Sound::query()->lazyById()->each(fn (Sound $sound) => $sound->delete()); // removes each file too
 
             DB::transaction(function () use ($users) {
-                foreach (self::MODELS as $model) {
+                foreach ($this->models() as $model) {
                     $model::query()->delete();
                 }
                 DB::table('sessions')->whereIn('user_id', $users->pluck('id'))->delete();
